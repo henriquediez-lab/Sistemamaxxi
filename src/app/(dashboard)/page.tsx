@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { prisma } from "@/lib/prisma";
 import { syncAnunciosAction } from "@/lib/actions/ml-actions";
+import { formatDateTimeBR } from "@/lib/format-date";
 import { SyncButton } from "./sync-button";
 import { StatusBadge } from "./status-badge";
 
@@ -13,13 +14,6 @@ function formatMoney(value: number, currency: string) {
     style: "currency",
     currency: currency || "BRL",
   }).format(value);
-}
-
-function formatDateTime(date: Date) {
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(date);
 }
 
 function SummaryCard({
@@ -129,7 +123,7 @@ export default async function AnunciosPage({
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             Conta: {account.nickname ?? account.sellerId}
             {lastSync?.finishedAt && (
-              <> · Última sincronização: {formatDateTime(lastSync.finishedAt)}</>
+              <> · Última sincronização: {formatDateTimeBR(lastSync.finishedAt)}</>
             )}
           </p>
         </div>

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { syncPedidosAction } from "@/lib/actions/ml-actions";
+import { formatDateBR, formatDateTimeBR } from "@/lib/format-date";
 import { SyncButton } from "../sync-button";
 import { PedidoStatusBadge } from "./pedido-status-badge";
 
@@ -15,17 +16,6 @@ function formatMoney(value: number, currency: string) {
     style: "currency",
     currency: currency || "BRL",
   }).format(value);
-}
-
-function formatDateTime(date: Date) {
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(date);
-}
-
-function formatDate(date: Date) {
-  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(date);
 }
 
 function SummaryCard({
@@ -79,9 +69,10 @@ function calcularIntervaloData(
     return { gte: new Date(Date.now() - dias * 24 * 60 * 60 * 1000) };
   }
   if (filtroPeriodo === "custom" && (de || ate)) {
+    // -03:00 fixo: Brasil não usa mais horário de verão desde 2019.
     const intervalo: { gte?: Date; lte?: Date } = {};
-    if (de) intervalo.gte = new Date(`${de}T00:00:00`);
-    if (ate) intervalo.lte = new Date(`${ate}T23:59:59.999`);
+    if (de) intervalo.gte = new Date(`${de}T00:00:00-03:00`);
+    if (ate) intervalo.lte = new Date(`${ate}T23:59:59.999-03:00`);
     return intervalo;
   }
   return null;
@@ -201,15 +192,15 @@ export default async function PedidosPage({
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             Conta: {account.nickname ?? account.sellerId}
             {lastSync?.finishedAt && (
-              <> · Última sincronização: {formatDateTime(lastSync.finishedAt)}</>
+              <> · Última sincronização: {formatDateTimeBR(lastSync.finishedAt)}</>
             )}
           </p>
           {periodoSincronizado._min.mlDateCreated &&
             periodoSincronizado._max.mlDateCreated && (
               <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">
                 Pedidos sincronizados de{" "}
-                {formatDate(periodoSincronizado._min.mlDateCreated)} até{" "}
-                {formatDate(periodoSincronizado._max.mlDateCreated)}
+                {formatDateBR(periodoSincronizado._min.mlDateCreated)} até{" "}
+                {formatDateBR(periodoSincronizado._max.mlDateCreated)}
               </p>
             )}
         </div>
@@ -365,7 +356,7 @@ export default async function PedidosPage({
                           #{pedido.id}
                         </p>
                         <p className="text-xs text-slate-400">
-                          {formatDateTime(pedido.mlDateCreated)}
+                          {formatDateTimeBR(pedido.mlDateCreated)}
                         </p>
                       </td>
                       <td className="px-4 py-3 text-slate-700 dark:text-slate-300">

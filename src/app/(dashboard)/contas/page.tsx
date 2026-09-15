@@ -1,15 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { disconnectMlAccountAction } from "@/lib/actions/ml-actions";
+import { formatDateTimeBR } from "@/lib/format-date";
 
 // Sempre reflete o estado atual da conexão com o Mercado Livre.
 export const dynamic = "force-dynamic";
-
-function formatDate(date: Date) {
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(date);
-}
 
 export default async function ContasPage({
   searchParams,
@@ -71,7 +65,7 @@ export default async function ContasPage({
               </p>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Conectada em {formatDate(account.connectedAt)}
+              Conectada em {formatDateTimeBR(account.connectedAt)}
             </p>
             <form action={disconnectMlAccountAction.bind(null, account.id)}>
               <button
