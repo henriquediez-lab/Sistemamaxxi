@@ -1,0 +1,80 @@
+// Schema do banco de dados do Gestor de Conta Mercado Livre
+// Documentação: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// Usuário que acessa o painel (login do sistema, não é a conta do Mercado Livre)
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// Conta do Mercado Livre conectada via OAuth2
+model MlAccount {
+  id           String   @id @default(cuid())
+  sellerId     String   @unique // "user_id" retornado pelo Mercado Livre
+  nickname     String?
+  siteId       String   @default("MLB") // MLB = Brasil
+  accessToken  String
+  refreshToken String
+  tokenType    String   @default("bearer")
+  scope        String?
+  expiresAt    DateTime
+  connectedAt  DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  anuncios Anuncio[]
+  syncLogs SyncLog[]
+}
+
+// Registro de cada sincronização de anúncios (para o usuário acompanhar o progresso)
+model SyncLog {
+  id           String    @id @default(cuid())
+  mlAccountId  String
+  mlAccount    MlAccount @relation(fields: [mlAccountId], references: [id], onDelete: Cascade)
+  status       String    @default("em_andamento") // em_andamento | concluido | erro
+  itemsSynced  Int       @default(0)
+  itemsTotal   Int?
+  errorMessage String?
+  startedAt    DateTime  @default(now())
+  finishedAt   DateTime?
+}
+
+// Anúncio (item) do Mercado Livre
+model Anuncio {
+  id                 String    @id // ML item id, ex: MLB123456789
+  mlAccountId        String
+  mlAccount          MlAccount @relation(fields: [mlAccountId], references: [id], onDelete: Cascade)
+  title              String
+  permalink          String?
+  thumbnail          String?
+  price              Float
+  currencyId         String    @default("BRL")
+  availableQuantity  Int       @default(0)
+  soldQuantity       Int       @default(0)
+  status             String // active | paused | closed | under_review | ...
+  condition          String?
+  listingTypeId      String?
+  categoryId         String?
+  catalogListing     Boolean   @default(false)
+  healthScore        Float? // "item health" retornado pelo Mercado Livre, quando disponível
+  mlDateCreated      DateTime?
+  mlLastUpdated      DateTime?
+  lastSyncedAt       DateTime  @default(now())
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([mlAccountId])
+  @@index([status])
+}
