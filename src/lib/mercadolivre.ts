@@ -230,10 +230,12 @@ export type MlOrder = {
 
 const ORDERS_PAGE_SIZE = 50;
 // A busca por offset da API do Mercado Livre não permite ultrapassar 1000
-// resultados por período. Quando um período tem mais que isso, dividimos a
-// busca em dois períodos menores (recursivamente) até caber.
+// resultados por consulta. Para ir além, em vez de "adivinhar" cortes de
+// data, usamos a data do próprio pedido mais antigo de cada lote como novo
+// limite superior da próxima consulta (paginação por cursor) — mais
+// confiável do que dividir o período às cegas, que se mostrou instável
+// para intervalos muito antigos nessa API.
 const ORDERS_MAX_OFFSET = 1000;
-const MIN_SPLIT_RANGE_MS = 1000; // trava de segurança contra recursão infinita
 
 function toMlDateParam(date: Date): string {
   return date.toISOString().replace("Z", "-00:00");
@@ -242,15 +244,16 @@ function toMlDateParam(date: Date): string {
 async function fetchOrdersPage(
   sellerId: string,
   accessToken: string,
-  opts: { from: Date; to: Date; offset: number }
+  opts: { to: Date | null; offset: number }
 ): Promise<{ results: MlOrder[]; total: number }> {
   const url = new URL(`${API_BASE_URL}/orders/search`);
   url.searchParams.set("seller", sellerId);
-  url.searchParams.set("sort", "date_asc");
+  url.searchParams.set("sort", "date_desc");
   url.searchParams.set("offset", String(opts.offset));
   url.searchParams.set("limit", String(ORDERS_PAGE_SIZE));
-  url.searchParams.set("order.date_created.from", toMlDateParam(opts.from));
-  url.searchParams.set("order.date_created.to", toMlDateParam(opts.to));
+  if (opts.to) {
+    url.searchParams.set("order.date_created.to", toMlDateParam(opts.to));
+  }
 
   const response = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -269,11 +272,12 @@ async function fetchOrdersPage(
 }
 
 /**
- * Busca todos os pedidos (vendas) do vendedor entre duas datas, chamando
- * `onBatch` a cada lote encontrado (para permitir salvar no banco aos
- * poucos). Contorna o limite de 1000 resultados da API dividindo o período
- * em pedaços menores sempre que necessário. Retorna o total de pedidos
- * processados.
+ * Busca todos os pedidos (vendas) do vendedor a partir de `fromDate`, do
+ * mais recente para o mais antigo, chamando `onBatch` a cada lote
+ * encontrado (para permitir salvar no banco aos poucos). Contorna o limite
+ * de 1000 resultados por consulta avançando o filtro `order.date_created.to`
+ * usando a data real do pedido mais antigo já visto. Retorna o total de
+ * pedidos processados.
  */
 export async function fetchAllOrders(
   sellerId: string,
@@ -282,29 +286,15 @@ export async function fetchAllOrders(
   onBatch: (orders: MlOrder[]) => Promise<void>
 ): Promise<number> {
   let total = 0;
+  let cursorTo: Date | null = null;
 
-  async function processRange(from: Date, to: Date): Promise<void> {
+  while (true) {
     const first = await fetchOrdersPage(sellerId, accessToken, {
-      from,
-      to,
+      to: cursorTo,
       offset: 0,
     });
 
-    if (
-      first.total > ORDERS_MAX_OFFSET &&
-      to.getTime() - from.getTime() > MIN_SPLIT_RANGE_MS
-    ) {
-      const mid = new Date((from.getTime() + to.getTime()) / 2);
-      await processRange(from, mid);
-      await processRange(new Date(mid.getTime() + 1), to);
-      return;
-    }
-
-    if (first.results.length > 0) {
-      await onBatch(first.results);
-      total += first.results.length;
-    }
-
+    const batch: MlOrder[] = [...first.results];
     const lastOffset = Math.min(first.total, ORDERS_MAX_OFFSET);
     for (
       let offset = ORDERS_PAGE_SIZE;
@@ -312,16 +302,35 @@ export async function fetchAllOrders(
       offset += ORDERS_PAGE_SIZE
     ) {
       const page = await fetchOrdersPage(sellerId, accessToken, {
-        from,
-        to,
+        to: cursorTo,
         offset,
       });
       if (page.results.length === 0) break;
-      await onBatch(page.results);
-      total += page.results.length;
+      batch.push(...page.results);
     }
+
+    if (batch.length === 0) break;
+
+    // batch vem do mais recente para o mais antigo (sort=date_desc)
+    const dentroDoPeriodo = batch.filter(
+      (order) => new Date(order.date_created) >= fromDate
+    );
+    if (dentroDoPeriodo.length > 0) {
+      await onBatch(dentroDoPeriodo);
+      total += dentroDoPeriodo.length;
+    }
+
+    const maisAntigoDoLote = batch[batch.length - 1];
+    const dataMaisAntiga = new Date(maisAntigoDoLote.date_created);
+
+    // Chegou antes do início do período desejado ou o lote veio menor que
+    // uma página cheia (não há mais pedidos anteriores): terminou.
+    if (dataMaisAntiga < fromDate || batch.length < ORDERS_PAGE_SIZE) {
+      break;
+    }
+
+    cursorTo = new Date(dataMaisAntiga.getTime() - 1);
   }
 
-  await processRange(fromDate, new Date());
   return total;
 }

@@ -170,27 +170,25 @@ export async function syncPedidosAction(
   try {
     const accessToken = await getValidAccessToken(account);
 
-    // Busca ~12 meses de histórico enquanto esse período ainda não tiver
-    // sido totalmente coberto. Depois que o histórico inicial já estiver
-    // completo, cada sincronização busca só a partir do pedido mais
-    // recente já salvo (com 1 dia de folga, para pegar atualizações de
-    // status de pedidos recentes), o que deixa as sincronizações bem mais
-    // rápidas no dia a dia.
+    // Busca ~12 meses de histórico enquanto essa marca não existir. Depois
+    // que o histórico inicial estiver completo, cada sincronização busca só
+    // a partir do pedido mais recente já salvo (com 1 dia de folga, para
+    // pegar atualizações de status de pedidos recentes), o que deixa as
+    // sincronizações bem mais rápidas no dia a dia.
     const historicoDesejadoDesde = new Date(
       Date.now() - PEDIDOS_HISTORICO_INICIAL_DIAS * 24 * 60 * 60 * 1000
     );
-    const { _min, _max } = await prisma.pedido.aggregate({
-      where: { mlAccountId: account.id },
-      _min: { mlDateCreated: true },
-      _max: { mlDateCreated: true },
-    });
-    const historicoCompleto =
-      _min.mlDateCreated !== null &&
-      _min.mlDateCreated.getTime() <= historicoDesejadoDesde.getTime();
-    const fromDate =
-      historicoCompleto && _max.mlDateCreated
-        ? new Date(_max.mlDateCreated.getTime() - 24 * 60 * 60 * 1000)
-        : historicoDesejadoDesde;
+    const historicoCompleto = account.pedidosHistoricoCompletoEm !== null;
+    let fromDate = historicoDesejadoDesde;
+    if (historicoCompleto) {
+      const { _max } = await prisma.pedido.aggregate({
+        where: { mlAccountId: account.id },
+        _max: { mlDateCreated: true },
+      });
+      if (_max.mlDateCreated) {
+        fromDate = new Date(_max.mlDateCreated.getTime() - 24 * 60 * 60 * 1000);
+      }
+    }
 
     let synced = 0;
     const total = await fetchAllOrders(
@@ -214,6 +212,13 @@ export async function syncPedidosAction(
         finishedAt: new Date(),
       },
     });
+
+    if (!historicoCompleto) {
+      await prisma.mlAccount.update({
+        where: { id: account.id },
+        data: { pedidosHistoricoCompletoEm: new Date() },
+      });
+    }
 
     revalidatePath("/pedidos");
 
