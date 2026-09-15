@@ -60,6 +60,33 @@ const AGUARDANDO_STATUSES = [
   "partially_paid",
 ];
 
+const PERIODO_OPTIONS = [
+  { value: "todos", label: "Tudo" },
+  { value: "7", label: "7 dias" },
+  { value: "15", label: "15 dias" },
+  { value: "30", label: "30 dias" },
+  { value: "custom", label: "Personalizado" },
+];
+
+/** Converte o filtro de período escolhido num intervalo de datas real. */
+function calcularIntervaloData(
+  filtroPeriodo: string,
+  de: string,
+  ate: string
+): { gte?: Date; lte?: Date } | null {
+  if (filtroPeriodo === "7" || filtroPeriodo === "15" || filtroPeriodo === "30") {
+    const dias = Number(filtroPeriodo);
+    return { gte: new Date(Date.now() - dias * 24 * 60 * 60 * 1000) };
+  }
+  if (filtroPeriodo === "custom" && (de || ate)) {
+    const intervalo: { gte?: Date; lte?: Date } = {};
+    if (de) intervalo.gte = new Date(`${de}T00:00:00`);
+    if (ate) intervalo.lte = new Date(`${ate}T23:59:59.999`);
+    return intervalo;
+  }
+  return null;
+}
+
 export default async function PedidosPage({
   searchParams,
 }: {
@@ -69,6 +96,11 @@ export default async function PedidosPage({
   const q = typeof params.q === "string" ? params.q.trim() : "";
   const statusFilter =
     typeof params.status === "string" ? params.status : "todos";
+  const filtroPeriodo =
+    typeof params.periodo === "string" ? params.periodo : "todos";
+  const de = typeof params.de === "string" ? params.de : "";
+  const ate = typeof params.ate === "string" ? params.ate : "";
+  const intervaloData = calcularIntervaloData(filtroPeriodo, de, ate);
 
   const account = await prisma.mlAccount.findFirst({
     orderBy: { connectedAt: "asc" },
@@ -95,7 +127,10 @@ export default async function PedidosPage({
   }
 
   const allPedidos = await prisma.pedido.findMany({
-    where: { mlAccountId: account.id },
+    where: {
+      mlAccountId: account.id,
+      ...(intervaloData ? { mlDateCreated: intervaloData } : {}),
+    },
     select: { status: true, totalAmount: true },
   });
 
@@ -113,7 +148,7 @@ export default async function PedidosPage({
     orderBy: { finishedAt: "desc" },
   });
 
-  const periodo = await prisma.pedido.aggregate({
+  const periodoSincronizado = await prisma.pedido.aggregate({
     where: { mlAccountId: account.id },
     _min: { mlDateCreated: true },
     _max: { mlDateCreated: true },
@@ -122,12 +157,23 @@ export default async function PedidosPage({
   const pedidos = await prisma.pedido.findMany({
     where: {
       mlAccountId: account.id,
+      ...(intervaloData ? { mlDateCreated: intervaloData } : {}),
       ...(statusFilter !== "todos" ? { status: statusFilter } : {}),
       ...(q
         ? {
             OR: [
               { buyerNickname: { contains: q } },
               { id: { contains: q } },
+              {
+                itens: {
+                  some: {
+                    OR: [
+                      { itemId: { contains: q } },
+                      { title: { contains: q } },
+                    ],
+                  },
+                },
+              },
             ],
           }
         : {}),
@@ -158,12 +204,14 @@ export default async function PedidosPage({
               <> · Última sincronização: {formatDateTime(lastSync.finishedAt)}</>
             )}
           </p>
-          {periodo._min.mlDateCreated && periodo._max.mlDateCreated && (
-            <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">
-              Pedidos sincronizados de {formatDate(periodo._min.mlDateCreated)}{" "}
-              até {formatDate(periodo._max.mlDateCreated)}
-            </p>
-          )}
+          {periodoSincronizado._min.mlDateCreated &&
+            periodoSincronizado._max.mlDateCreated && (
+              <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">
+                Pedidos sincronizados de{" "}
+                {formatDate(periodoSincronizado._min.mlDateCreated)} até{" "}
+                {formatDate(periodoSincronizado._max.mlDateCreated)}
+              </p>
+            )}
         </div>
         <SyncButton
           mlAccountId={account.id}
@@ -194,20 +242,45 @@ export default async function PedidosPage({
         />
       </div>
 
-      {totalPedidos === 0 ? (
+      {!periodoSincronizado._min.mlDateCreated ? (
         <div className="mt-10 rounded-2xl border border-dashed border-slate-300 p-10 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
           Nenhum pedido sincronizado ainda. Clique em &quot;Sincronizar
           agora&quot; para importar suas vendas do Mercado Livre.
         </div>
       ) : (
         <div className="mt-8">
-          <form className="flex flex-wrap gap-3" method="get">
+          <div className="flex flex-wrap gap-2">
+            {PERIODO_OPTIONS.map((option) => {
+              const href = `?${new URLSearchParams({
+                ...(q ? { q } : {}),
+                ...(statusFilter !== "todos" ? { status: statusFilter } : {}),
+                periodo: option.value,
+                ...(option.value === "custom" ? { de, ate } : {}),
+              }).toString()}`;
+              const ativo = filtroPeriodo === option.value;
+              return (
+                <Link
+                  key={option.value}
+                  href={href}
+                  className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                    ativo
+                      ? "bg-yellow-400 text-slate-900"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                  }`}
+                >
+                  {option.label}
+                </Link>
+              );
+            })}
+          </div>
+
+          <form className="mt-3 flex flex-wrap items-center gap-3" method="get">
             <input
               type="text"
               name="q"
               defaultValue={q}
-              placeholder="Buscar por comprador ou nº do pedido..."
-              className="w-72 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+              placeholder="Buscar por comprador, nº do pedido, MLB ou nome do produto..."
+              className="w-80 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
             />
             <select
               name="status"
@@ -220,6 +293,29 @@ export default async function PedidosPage({
                 </option>
               ))}
             </select>
+            {filtroPeriodo === "custom" && (
+              <>
+                <input type="hidden" name="periodo" value="custom" />
+                <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                  De
+                  <input
+                    type="date"
+                    name="de"
+                    defaultValue={de}
+                    className="rounded-lg border border-slate-300 px-2 py-2 text-sm outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                  />
+                </label>
+                <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                  Até
+                  <input
+                    type="date"
+                    name="ate"
+                    defaultValue={ate}
+                    className="rounded-lg border border-slate-300 px-2 py-2 text-sm outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                  />
+                </label>
+              </>
+            )}
             <button
               type="submit"
               className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
@@ -228,6 +324,12 @@ export default async function PedidosPage({
             </button>
           </form>
 
+          {totalPedidos === 0 ? (
+            <div className="mt-6 rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+              Nenhum pedido encontrado para esse filtro.
+            </div>
+          ) : (
+            <>
           <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
             <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-800">
               <thead className="bg-slate-50 dark:bg-slate-900">
@@ -272,14 +374,21 @@ export default async function PedidosPage({
                       <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
                         {primeiroItem ? (
                           <>
-                            <span className="line-clamp-1 inline-block max-w-xs align-bottom">
-                              {primeiroItem.quantity}× {primeiroItem.title}
-                            </span>
-                            {outrosItens > 0 && (
-                              <span className="text-xs text-slate-400">
-                                {" "}
-                                + {outrosItens} outro(s)
+                            <div>
+                              <span className="line-clamp-1 inline-block max-w-xs align-bottom">
+                                {primeiroItem.quantity}× {primeiroItem.title}
                               </span>
+                              {outrosItens > 0 && (
+                                <span className="text-xs text-slate-400">
+                                  {" "}
+                                  + {outrosItens} outro(s)
+                                </span>
+                              )}
+                            </div>
+                            {primeiroItem.itemId && (
+                              <p className="text-xs text-slate-400">
+                                {primeiroItem.itemId}
+                              </p>
                             )}
                           </>
                         ) : (
@@ -303,6 +412,8 @@ export default async function PedidosPage({
               Mostrando os 200 pedidos mais recentes. Use a busca para
               encontrar outros.
             </p>
+          )}
+            </>
           )}
         </div>
       )}
