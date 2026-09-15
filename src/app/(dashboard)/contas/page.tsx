@@ -1,6 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { disconnectMlAccountAction } from "@/lib/actions/ml-actions";
 
+// Sempre reflete o estado atual da conexão com o Mercado Livre.
+export const dynamic = "force-dynamic";
+
 function formatDate(date: Date) {
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",

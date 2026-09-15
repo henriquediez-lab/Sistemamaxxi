@@ -4,6 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { SyncButton } from "./sync-button";
 import { StatusBadge } from "./status-badge";
 
+// Sempre reflete o estado atual do banco (anúncios recém-sincronizados).
+export const dynamic = "force-dynamic";
+
 function formatMoney(value: number, currency: string) {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",

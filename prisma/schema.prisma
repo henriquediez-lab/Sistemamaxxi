@@ -7,7 +7,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 // Usuário que acessa o painel (login do sistema, não é a conta do Mercado Livre)
