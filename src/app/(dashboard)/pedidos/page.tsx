@@ -24,6 +24,10 @@ function formatDateTime(date: Date) {
   }).format(date);
 }
 
+function formatDate(date: Date) {
+  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(date);
+}
+
 function SummaryCard({
   label,
   value,
@@ -109,6 +113,12 @@ export default async function PedidosPage({
     orderBy: { finishedAt: "desc" },
   });
 
+  const periodo = await prisma.pedido.aggregate({
+    where: { mlAccountId: account.id },
+    _min: { mlDateCreated: true },
+    _max: { mlDateCreated: true },
+  });
+
   const pedidos = await prisma.pedido.findMany({
     where: {
       mlAccountId: account.id,
@@ -148,6 +158,12 @@ export default async function PedidosPage({
               <> · Última sincronização: {formatDateTime(lastSync.finishedAt)}</>
             )}
           </p>
+          {periodo._min.mlDateCreated && periodo._max.mlDateCreated && (
+            <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">
+              Pedidos sincronizados de {formatDate(periodo._min.mlDateCreated)}{" "}
+              até {formatDate(periodo._max.mlDateCreated)}
+            </p>
+          )}
         </div>
         <SyncButton
           mlAccountId={account.id}
