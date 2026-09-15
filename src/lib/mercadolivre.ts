@@ -271,22 +271,32 @@ async function fetchOrdersPage(
   return { results: data.results, total: data.paging.total };
 }
 
+export type FetchOrdersResult = {
+  total: number;
+  /** true quando chegou até `fromDate` (ou acabaram os pedidos); false se
+   * parou no meio (ex: por tempo), podendo ser retomado depois. */
+  completo: boolean;
+};
+
 /**
- * Busca todos os pedidos (vendas) do vendedor a partir de `fromDate`, do
- * mais recente para o mais antigo, chamando `onBatch` a cada lote
- * encontrado (para permitir salvar no banco aos poucos). Contorna o limite
- * de 1000 resultados por consulta avançando o filtro `order.date_created.to`
- * usando a data real do pedido mais antigo já visto. Retorna o total de
- * pedidos processados.
+ * Busca pedidos (vendas) do vendedor a partir de `fromDate`, do mais
+ * recente para o mais antigo, chamando `onBatch` a cada lote encontrado
+ * (para permitir salvar no banco aos poucos) e `onCursorAdvance` com o
+ * ponto onde parou (para poder retomar dali numa próxima chamada, caso
+ * essa não dê tempo de terminar). Contorna o limite de 1000 resultados por
+ * consulta avançando o filtro `order.date_created.to` usando a data real do
+ * pedido mais antigo já visto, em vez de datas calculadas às cegas.
  */
 export async function fetchAllOrders(
   sellerId: string,
   accessToken: string,
   fromDate: Date,
-  onBatch: (orders: MlOrder[]) => Promise<void>
-): Promise<number> {
+  initialCursorTo: Date | null,
+  onBatch: (orders: MlOrder[]) => Promise<void>,
+  onCursorAdvance: (cursor: Date | null) => Promise<void>
+): Promise<FetchOrdersResult> {
   let total = 0;
-  let cursorTo: Date | null = null;
+  let cursorTo: Date | null = initialCursorTo;
 
   while (true) {
     const first = await fetchOrdersPage(sellerId, accessToken, {
@@ -309,7 +319,10 @@ export async function fetchAllOrders(
       batch.push(...page.results);
     }
 
-    if (batch.length === 0) break;
+    if (batch.length === 0) {
+      await onCursorAdvance(null);
+      return { total, completo: true };
+    }
 
     // batch vem do mais recente para o mais antigo (sort=date_desc)
     const dentroDoPeriodo = batch.filter(
@@ -323,14 +336,15 @@ export async function fetchAllOrders(
     const maisAntigoDoLote = batch[batch.length - 1];
     const dataMaisAntiga = new Date(maisAntigoDoLote.date_created);
 
-    // Chegou antes do início do período desejado ou o lote veio menor que
-    // uma página cheia (não há mais pedidos anteriores): terminou.
-    if (dataMaisAntiga < fromDate || batch.length < ORDERS_PAGE_SIZE) {
-      break;
+    // Chegou antes do início do período desejado, ou essa consulta trouxe
+    // tudo que existia (total menor que o limite por consulta): não há
+    // mais pedidos mais antigos para buscar, terminou.
+    if (dataMaisAntiga < fromDate || first.total <= ORDERS_MAX_OFFSET) {
+      await onCursorAdvance(null);
+      return { total, completo: true };
     }
 
     cursorTo = new Date(dataMaisAntiga.getTime() - 1);
+    await onCursorAdvance(cursorTo);
   }
-
-  return total;
 }

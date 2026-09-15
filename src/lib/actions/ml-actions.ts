@@ -14,6 +14,10 @@ export type SyncResult = {
   ok: boolean;
   itemsSynced?: number;
   error?: string;
+  /** true quando a busca do histórico inicial não terminou nessa chamada
+   * (ex: muitos pedidos para uma única sincronização) — clicar de novo
+   * continua de onde parou. */
+  parcial?: boolean;
 };
 
 export async function syncAnunciosAction(
@@ -189,17 +193,29 @@ export async function syncPedidosAction(
         fromDate = new Date(_max.mlDateCreated.getTime() - 24 * 60 * 60 * 1000);
       }
     }
+    // Se a sincronização anterior do histórico inicial não deu tempo de
+    // terminar, continua dali em vez de recomeçar do "agora".
+    const initialCursorTo = historicoCompleto ? null : account.pedidosSyncCursor;
 
     let synced = 0;
-    const total = await fetchAllOrders(
+    const resultado = await fetchAllOrders(
       account.sellerId,
       accessToken,
       fromDate,
+      initialCursorTo,
       async (batch) => {
         for (const order of batch) {
           await upsertPedido(order, account.id);
         }
         synced += batch.length;
+      },
+      async (cursor) => {
+        if (!historicoCompleto) {
+          await prisma.mlAccount.update({
+            where: { id: account.id },
+            data: { pedidosSyncCursor: cursor },
+          });
+        }
       }
     );
 
@@ -208,21 +224,25 @@ export async function syncPedidosAction(
       data: {
         status: "concluido",
         itemsSynced: synced,
-        itemsTotal: total,
+        itemsTotal: resultado.total,
         finishedAt: new Date(),
       },
     });
 
-    if (!historicoCompleto) {
+    if (!historicoCompleto && resultado.completo) {
       await prisma.mlAccount.update({
         where: { id: account.id },
-        data: { pedidosHistoricoCompletoEm: new Date() },
+        data: { pedidosHistoricoCompletoEm: new Date(), pedidosSyncCursor: null },
       });
     }
 
     revalidatePath("/pedidos");
 
-    return { ok: true, itemsSynced: synced };
+    return {
+      ok: true,
+      itemsSynced: synced,
+      parcial: !historicoCompleto && !resultado.completo,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro desconhecido.";
     await prisma.syncLog.update({

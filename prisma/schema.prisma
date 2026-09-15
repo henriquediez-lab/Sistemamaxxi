@@ -38,6 +38,10 @@ model MlAccount {
   // completamente sincronizado, para as próximas sincronizações saberem
   // que podem buscar só pedidos novos em vez de tudo de novo.
   pedidosHistoricoCompletoEm DateTime?
+  // Ponto onde a busca do histórico inicial parou (caso não tenha dado
+  // tempo de terminar numa única sincronização), para continuar dali na
+  // próxima em vez de recomeçar do zero.
+  pedidosSyncCursor          DateTime?
 
   anuncios Anuncio[]
   pedidos  Pedido[]

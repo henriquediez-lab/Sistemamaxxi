@@ -22,9 +22,15 @@ export function SyncButton({
       const result = await action(mlAccountId);
       if (result.ok) {
         setIsError(false);
-        setMessage(
-          `Sincronização concluída: ${result.itemsSynced} ${unitLabel} atualizado(s).`
-        );
+        if (result.parcial) {
+          setMessage(
+            `${result.itemsSynced} ${unitLabel} atualizado(s) até agora. Ainda tem histórico pra buscar — clique em "Sincronizar agora" de novo para continuar.`
+          );
+        } else {
+          setMessage(
+            `Sincronização concluída: ${result.itemsSynced} ${unitLabel} atualizado(s).`
+          );
+        }
       } else {
         setIsError(true);
         setMessage(result.error ?? "Erro ao sincronizar.");
