@@ -117,11 +117,35 @@ export default async function PedidosPage({
     );
   }
 
+  // Mesmo filtro (período, status e busca) usado tanto para os cards de
+  // resumo quanto para a tabela, para os números baterem com o que é
+  // exibido na lista.
+  const whereFiltrado = {
+    mlAccountId: account.id,
+    ...(intervaloData ? { mlDateCreated: intervaloData } : {}),
+    ...(statusFilter !== "todos" ? { status: statusFilter } : {}),
+    ...(q
+      ? {
+          OR: [
+            { buyerNickname: { contains: q } },
+            { id: { contains: q } },
+            {
+              itens: {
+                some: {
+                  OR: [
+                    { itemId: { contains: q } },
+                    { title: { contains: q } },
+                  ],
+                },
+              },
+            },
+          ],
+        }
+      : {}),
+  };
+
   const allPedidos = await prisma.pedido.findMany({
-    where: {
-      mlAccountId: account.id,
-      ...(intervaloData ? { mlDateCreated: intervaloData } : {}),
-    },
+    where: whereFiltrado,
     select: { status: true, totalAmount: true },
   });
 
@@ -146,29 +170,7 @@ export default async function PedidosPage({
   });
 
   const pedidos = await prisma.pedido.findMany({
-    where: {
-      mlAccountId: account.id,
-      ...(intervaloData ? { mlDateCreated: intervaloData } : {}),
-      ...(statusFilter !== "todos" ? { status: statusFilter } : {}),
-      ...(q
-        ? {
-            OR: [
-              { buyerNickname: { contains: q } },
-              { id: { contains: q } },
-              {
-                itens: {
-                  some: {
-                    OR: [
-                      { itemId: { contains: q } },
-                      { title: { contains: q } },
-                    ],
-                  },
-                },
-              },
-            ],
-          }
-        : {}),
-    },
+    where: whereFiltrado,
     include: { itens: true },
     orderBy: { mlDateCreated: "desc" },
     take: 200,
@@ -211,7 +213,19 @@ export default async function PedidosPage({
         />
       </div>
 
-      <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+      {(q || statusFilter !== "todos" || filtroPeriodo !== "todos") && (
+        <p className="mt-6 text-xs font-medium text-slate-500 dark:text-slate-400">
+          Números abaixo consideram os filtros aplicados.
+        </p>
+      )}
+
+      <div
+        className={`grid grid-cols-2 gap-4 sm:grid-cols-4 ${
+          q || statusFilter !== "todos" || filtroPeriodo !== "todos"
+            ? "mt-2"
+            : "mt-6"
+        }`}
+      >
         <SummaryCard label="Total de pedidos" value={String(totalPedidos)} />
         <SummaryCard label="Pagos" value={String(pagos.length)} />
         <SummaryCard
