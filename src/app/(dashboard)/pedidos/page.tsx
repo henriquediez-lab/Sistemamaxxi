@@ -96,8 +96,19 @@ export default async function PedidosPage({
 
   const allPedidos = await prisma.pedido.findMany({
     where: { mlAccountId: account.id },
-    select: { status: true, totalAmount: true },
+    select: { status: true, totalAmount: true, mlDateCreated: true },
   });
+
+  const porMes = new Map<string, number>();
+  for (const p of allPedidos) {
+    const chave = `${p.mlDateCreated.getFullYear()}-${String(
+      p.mlDateCreated.getMonth() + 1
+    ).padStart(2, "0")}`;
+    porMes.set(chave, (porMes.get(chave) ?? 0) + 1);
+  }
+  const porMesOrdenado = [...porMes.entries()].sort(([a], [b]) =>
+    a.localeCompare(b)
+  );
 
   const totalPedidos = allPedidos.length;
   const pagos = allPedidos.filter((p) => p.status === "paid");
@@ -193,6 +204,23 @@ export default async function PedidosPage({
           hint="Faturamento ÷ número de pedidos pagos"
         />
       </div>
+
+      {/* Painel temporário de diagnóstico: quantos pedidos por mês foram
+          sincronizados, para conferir se algum período está faltando. */}
+      {porMesOrdenado.length > 0 && (
+        <div className="mt-4 rounded-2xl border border-dashed border-amber-300 bg-amber-50 p-4 text-xs dark:border-amber-800 dark:bg-amber-950">
+          <p className="mb-2 font-medium text-amber-800 dark:text-amber-200">
+            Diagnóstico: pedidos sincronizados por mês
+          </p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-amber-700 dark:text-amber-300">
+            {porMesOrdenado.map(([mes, qtd]) => (
+              <span key={mes}>
+                {mes}: <strong>{qtd}</strong>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {totalPedidos === 0 ? (
         <div className="mt-10 rounded-2xl border border-dashed border-slate-300 p-10 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
