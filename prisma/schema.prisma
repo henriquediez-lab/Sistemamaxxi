@@ -35,20 +35,24 @@ model MlAccount {
   updatedAt    DateTime @updatedAt
 
   anuncios Anuncio[]
+  pedidos  Pedido[]
   syncLogs SyncLog[]
 }
 
-// Registro de cada sincronização de anúncios (para o usuário acompanhar o progresso)
+// Registro de cada sincronização (anúncios ou pedidos), para o usuário acompanhar o progresso
 model SyncLog {
   id           String    @id @default(cuid())
   mlAccountId  String
   mlAccount    MlAccount @relation(fields: [mlAccountId], references: [id], onDelete: Cascade)
+  type         String    @default("anuncios") // anuncios | pedidos
   status       String    @default("em_andamento") // em_andamento | concluido | erro
   itemsSynced  Int       @default(0)
   itemsTotal   Int?
   errorMessage String?
   startedAt    DateTime  @default(now())
   finishedAt   DateTime?
+
+  @@index([mlAccountId, type])
 }
 
 // Anúncio (item) do Mercado Livre
@@ -77,4 +81,41 @@ model Anuncio {
 
   @@index([mlAccountId])
   @@index([status])
+}
+
+// Pedido (venda) do Mercado Livre
+model Pedido {
+  id            String    @id // ML order id
+  mlAccountId   String
+  mlAccount     MlAccount @relation(fields: [mlAccountId], references: [id], onDelete: Cascade)
+  status        String // paid | confirmed | payment_required | cancelled | invalid | ...
+  statusDetail  String?
+  totalAmount   Float
+  paidAmount    Float?
+  currencyId    String    @default("BRL")
+  buyerNickname String?
+  mlDateCreated DateTime
+  mlDateClosed  DateTime?
+  lastSyncedAt  DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  itens PedidoItem[]
+
+  @@index([mlAccountId])
+  @@index([status])
+  @@index([mlDateCreated])
+}
+
+// Item de um pedido (um pedido pode ter vários produtos)
+model PedidoItem {
+  id         String @id @default(cuid())
+  pedidoId   String
+  pedido     Pedido @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  itemId     String? // ML item id do anúncio vendido, quando disponível
+  title      String
+  quantity   Int
+  unitPrice  Float
+
+  @@index([pedidoId])
 }

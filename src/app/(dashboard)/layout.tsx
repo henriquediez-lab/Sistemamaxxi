@@ -5,6 +5,7 @@ import { logoutAction } from "@/lib/actions/auth-actions";
 
 const NAV_ITEMS = [
   { href: "/", label: "Anúncios" },
+  { href: "/pedidos", label: "Vendas e Pedidos" },
   { href: "/contas", label: "Conta Mercado Livre" },
 ];
 

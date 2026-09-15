@@ -210,3 +210,67 @@ export async function fetchItemsDetails(
 
   return details;
 }
+
+export type MlOrder = {
+  id: number;
+  status: string;
+  status_detail: string | null;
+  date_created: string;
+  date_closed: string | null;
+  total_amount: number;
+  paid_amount: number | null;
+  currency_id: string;
+  buyer?: { nickname?: string };
+  order_items: Array<{
+    item: { id: string; title: string };
+    quantity: number;
+    unit_price: number;
+  }>;
+};
+
+const ORDERS_PAGE_SIZE = 50;
+// A busca por offset da API do Mercado Livre não permite ultrapassar 1000
+// resultados; contas com mais pedidos que isso precisariam de um filtro por
+// período (fora do escopo desta primeira versão).
+const ORDERS_MAX_OFFSET = 1000;
+
+/** Busca todos os pedidos (vendas) do vendedor, da mais recente para a mais antiga. */
+export async function fetchAllOrders(
+  sellerId: string,
+  accessToken: string
+): Promise<MlOrder[]> {
+  const orders: MlOrder[] = [];
+
+  for (let offset = 0; offset < ORDERS_MAX_OFFSET; offset += ORDERS_PAGE_SIZE) {
+    const url = new URL(`${API_BASE_URL}/orders/search`);
+    url.searchParams.set("seller", sellerId);
+    url.searchParams.set("sort", "date_desc");
+    url.searchParams.set("offset", String(offset));
+    url.searchParams.set("limit", String(ORDERS_PAGE_SIZE));
+
+    const response = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Não foi possível listar os pedidos (HTTP ${response.status})`
+      );
+    }
+    const data = (await response.json()) as {
+      results: MlOrder[];
+      paging: { total: number };
+    };
+
+    orders.push(...data.results);
+
+    if (
+      data.results.length < ORDERS_PAGE_SIZE ||
+      orders.length >= data.paging.total
+    ) {
+      break;
+    }
+  }
+
+  return orders;
+}

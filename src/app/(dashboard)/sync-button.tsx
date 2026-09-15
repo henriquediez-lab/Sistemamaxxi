@@ -1,9 +1,17 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { syncAnunciosAction } from "@/lib/actions/ml-actions";
+import type { SyncResult } from "@/lib/actions/ml-actions";
 
-export function SyncButton({ mlAccountId }: { mlAccountId: string }) {
+export function SyncButton({
+  mlAccountId,
+  action,
+  unitLabel,
+}: {
+  mlAccountId: string;
+  action: (mlAccountId: string) => Promise<SyncResult>;
+  unitLabel: string;
+}) {
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
@@ -11,11 +19,11 @@ export function SyncButton({ mlAccountId }: { mlAccountId: string }) {
   function handleClick() {
     setMessage(null);
     startTransition(async () => {
-      const result = await syncAnunciosAction(mlAccountId);
+      const result = await action(mlAccountId);
       if (result.ok) {
         setIsError(false);
         setMessage(
-          `Sincronização concluída: ${result.itemsSynced} anúncio(s) atualizado(s).`
+          `Sincronização concluída: ${result.itemsSynced} ${unitLabel} atualizado(s).`
         );
       } else {
         setIsError(true);

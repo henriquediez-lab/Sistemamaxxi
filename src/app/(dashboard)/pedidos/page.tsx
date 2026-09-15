@@ -1,11 +1,10 @@
 import Link from "next/link";
-import Image from "next/image";
 import { prisma } from "@/lib/prisma";
-import { syncAnunciosAction } from "@/lib/actions/ml-actions";
-import { SyncButton } from "./sync-button";
-import { StatusBadge } from "./status-badge";
+import { syncPedidosAction } from "@/lib/actions/ml-actions";
+import { SyncButton } from "../sync-button";
+import { PedidoStatusBadge } from "./pedido-status-badge";
 
-// Sempre reflete o estado atual do banco (anúncios recém-sincronizados).
+// Sempre reflete o estado atual do banco (pedidos recém-sincronizados).
 export const dynamic = "force-dynamic";
 
 function formatMoney(value: number, currency: string) {
@@ -48,7 +47,13 @@ function SummaryCard({
   );
 }
 
-export default async function AnunciosPage({
+const AGUARDANDO_STATUSES = [
+  "payment_required",
+  "payment_in_process",
+  "partially_paid",
+];
+
+export default async function PedidosPage({
   searchParams,
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
@@ -70,7 +75,7 @@ export default async function AnunciosPage({
         </h1>
         <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
           Conecte a sua conta do Mercado Livre para ver e sincronizar seus
-          anúncios aqui.
+          pedidos aqui.
         </p>
         <Link
           href="/contas"
@@ -82,41 +87,49 @@ export default async function AnunciosPage({
     );
   }
 
-  const allAnuncios = await prisma.anuncio.findMany({
+  const allPedidos = await prisma.pedido.findMany({
     where: { mlAccountId: account.id },
-    select: { price: true, availableQuantity: true, status: true },
+    select: { status: true, totalAmount: true },
   });
 
-  const totalAnuncios = allAnuncios.length;
-  const ativos = allAnuncios.filter((a) => a.status === "active").length;
-  const pausados = allAnuncios.filter((a) => a.status === "paused").length;
-  const semEstoque = allAnuncios.filter(
-    (a) => a.status === "active" && a.availableQuantity === 0
-  ).length;
-  const valorEmEstoque = allAnuncios
-    .filter((a) => a.status === "active")
-    .reduce((sum, a) => sum + a.price * a.availableQuantity, 0);
+  const totalPedidos = allPedidos.length;
+  const pagos = allPedidos.filter((p) => p.status === "paid");
+  const aguardando = allPedidos.filter((p) =>
+    AGUARDANDO_STATUSES.includes(p.status)
+  );
+  const cancelados = allPedidos.filter((p) => p.status === "cancelled");
+  const faturamento = pagos.reduce((sum, p) => sum + p.totalAmount, 0);
+  const ticketMedio = pagos.length > 0 ? faturamento / pagos.length : 0;
 
   const lastSync = await prisma.syncLog.findFirst({
-    where: { mlAccountId: account.id, status: "concluido" },
+    where: { mlAccountId: account.id, type: "pedidos", status: "concluido" },
     orderBy: { finishedAt: "desc" },
   });
 
-  const anuncios = await prisma.anuncio.findMany({
+  const pedidos = await prisma.pedido.findMany({
     where: {
       mlAccountId: account.id,
       ...(statusFilter !== "todos" ? { status: statusFilter } : {}),
-      ...(q ? { title: { contains: q } } : {}),
+      ...(q
+        ? {
+            OR: [
+              { buyerNickname: { contains: q } },
+              { id: { contains: q } },
+            ],
+          }
+        : {}),
     },
-    orderBy: { mlLastUpdated: "desc" },
+    include: { itens: true },
+    orderBy: { mlDateCreated: "desc" },
     take: 200,
   });
 
   const statusOptions = [
     { value: "todos", label: "Todos os status" },
-    { value: "active", label: "Ativos" },
-    { value: "paused", label: "Pausados" },
-    { value: "closed", label: "Encerrados" },
+    { value: "paid", label: "Pagos" },
+    { value: "confirmed", label: "Confirmados" },
+    { value: "payment_required", label: "Aguardando pagamento" },
+    { value: "cancelled", label: "Cancelados" },
   ];
 
   return (
@@ -124,7 +137,7 @@ export default async function AnunciosPage({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-slate-900 dark:text-white">
-            Anúncios
+            Vendas e Pedidos
           </h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             Conta: {account.nickname ?? account.sellerId}
@@ -135,34 +148,37 @@ export default async function AnunciosPage({
         </div>
         <SyncButton
           mlAccountId={account.id}
-          action={syncAnunciosAction}
-          unitLabel="anúncio(s)"
+          action={syncPedidosAction}
+          unitLabel="pedido(s)"
         />
       </div>
 
       <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <SummaryCard label="Total de anúncios" value={String(totalAnuncios)} />
-        <SummaryCard label="Ativos" value={String(ativos)} />
-        <SummaryCard label="Pausados" value={String(pausados)} />
+        <SummaryCard label="Total de pedidos" value={String(totalPedidos)} />
+        <SummaryCard label="Pagos" value={String(pagos.length)} />
         <SummaryCard
-          label="Ativos sem estoque"
-          value={String(semEstoque)}
-          hint={semEstoque > 0 ? "Precisam de reposição" : undefined}
+          label="Aguardando pagamento"
+          value={String(aguardando.length)}
+        />
+        <SummaryCard label="Cancelados" value={String(cancelados.length)} />
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <SummaryCard
+          label="Faturamento (pedidos pagos)"
+          value={formatMoney(faturamento, "BRL")}
+        />
+        <SummaryCard
+          label="Ticket médio"
+          value={formatMoney(ticketMedio, "BRL")}
+          hint="Faturamento ÷ número de pedidos pagos"
         />
       </div>
 
-      <div className="mt-4">
-        <SummaryCard
-          label="Valor em estoque (anúncios ativos)"
-          value={formatMoney(valorEmEstoque, "BRL")}
-          hint="Preço de venda × quantidade disponível"
-        />
-      </div>
-
-      {totalAnuncios === 0 ? (
+      {totalPedidos === 0 ? (
         <div className="mt-10 rounded-2xl border border-dashed border-slate-300 p-10 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-          Nenhum anúncio sincronizado ainda. Clique em &quot;Sincronizar
-          agora&quot; para importar seus anúncios do Mercado Livre.
+          Nenhum pedido sincronizado ainda. Clique em &quot;Sincronizar
+          agora&quot; para importar suas vendas do Mercado Livre.
         </div>
       ) : (
         <div className="mt-8">
@@ -171,8 +187,8 @@ export default async function AnunciosPage({
               type="text"
               name="q"
               defaultValue={q}
-              placeholder="Buscar por título..."
-              className="w-64 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+              placeholder="Buscar por comprador ou nº do pedido..."
+              className="w-72 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
             />
             <select
               name="status"
@@ -198,16 +214,16 @@ export default async function AnunciosPage({
               <thead className="bg-slate-50 dark:bg-slate-900">
                 <tr>
                   <th className="px-4 py-3 text-left font-medium text-slate-500 dark:text-slate-400">
-                    Anúncio
+                    Pedido
+                  </th>
+                  <th className="px-4 py-3 text-left font-medium text-slate-500 dark:text-slate-400">
+                    Comprador
+                  </th>
+                  <th className="px-4 py-3 text-left font-medium text-slate-500 dark:text-slate-400">
+                    Itens
                   </th>
                   <th className="px-4 py-3 text-right font-medium text-slate-500 dark:text-slate-400">
-                    Preço
-                  </th>
-                  <th className="px-4 py-3 text-right font-medium text-slate-500 dark:text-slate-400">
-                    Estoque
-                  </th>
-                  <th className="px-4 py-3 text-right font-medium text-slate-500 dark:text-slate-400">
-                    Vendidos
+                    Valor
                   </th>
                   <th className="px-4 py-3 text-left font-medium text-slate-500 dark:text-slate-400">
                     Status
@@ -215,62 +231,57 @@ export default async function AnunciosPage({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {anuncios.map((anuncio) => (
-                  <tr
-                    key={anuncio.id}
-                    className="bg-white hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800/60"
-                  >
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        {anuncio.thumbnail && (
-                          <Image
-                            src={anuncio.thumbnail}
-                            alt=""
-                            width={40}
-                            height={40}
-                            unoptimized
-                            className="h-10 w-10 rounded-lg object-cover"
-                          />
-                        )}
-                        <div>
-                          {anuncio.permalink ? (
-                            <a
-                              href={anuncio.permalink}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="line-clamp-1 max-w-xs font-medium text-slate-900 hover:underline dark:text-white"
-                            >
-                              {anuncio.title}
-                            </a>
-                          ) : (
-                            <span className="line-clamp-1 max-w-xs font-medium text-slate-900 dark:text-white">
-                              {anuncio.title}
+                {pedidos.map((pedido) => {
+                  const primeiroItem = pedido.itens[0];
+                  const outrosItens = pedido.itens.length - 1;
+                  return (
+                    <tr
+                      key={pedido.id}
+                      className="bg-white hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800/60"
+                    >
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-slate-900 dark:text-white">
+                          #{pedido.id}
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          {formatDateTime(pedido.mlDateCreated)}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
+                        {pedido.buyerNickname ?? "—"}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
+                        {primeiroItem ? (
+                          <>
+                            <span className="line-clamp-1 inline-block max-w-xs align-bottom">
+                              {primeiroItem.quantity}× {primeiroItem.title}
                             </span>
-                          )}
-                          <p className="text-xs text-slate-400">{anuncio.id}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">
-                      {formatMoney(anuncio.price, anuncio.currencyId)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">
-                      {anuncio.availableQuantity}
-                    </td>
-                    <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">
-                      {anuncio.soldQuantity}
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={anuncio.status} />
-                    </td>
-                  </tr>
-                ))}
+                            {outrosItens > 0 && (
+                              <span className="text-xs text-slate-400">
+                                {" "}
+                                + {outrosItens} outro(s)
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">
+                        {formatMoney(pedido.totalAmount, pedido.currencyId)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <PedidoStatusBadge status={pedido.status} />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-          {anuncios.length === 200 && (
+          {pedidos.length === 200 && (
             <p className="mt-3 text-xs text-slate-400">
-              Mostrando os 200 anúncios mais recentes. Use a busca para
+              Mostrando os 200 pedidos mais recentes. Use a busca para
               encontrar outros.
             </p>
           )}
