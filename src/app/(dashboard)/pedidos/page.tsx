@@ -6,6 +6,9 @@ import { PedidoStatusBadge } from "./pedido-status-badge";
 
 // Sempre reflete o estado atual do banco (pedidos recém-sincronizados).
 export const dynamic = "force-dynamic";
+// Dá mais tempo para o botão "Sincronizar agora" (pode envolver muitas
+// páginas da API do Mercado Livre). 60s é o máximo do plano gratuito da Vercel.
+export const maxDuration = 60;
 
 function formatMoney(value: number, currency: string) {
   return new Intl.NumberFormat("pt-BR", {

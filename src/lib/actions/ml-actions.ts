@@ -7,6 +7,7 @@ import {
   fetchAllItemIds,
   fetchItemsDetails,
   fetchAllOrders,
+  type MlOrder,
 } from "@/lib/mercadolivre";
 
 export type SyncResult = {
@@ -108,6 +109,49 @@ export async function syncAnunciosAction(
   }
 }
 
+const PEDIDOS_HISTORICO_INICIAL_DIAS = 365; // ~12 meses no primeiro sync
+
+async function upsertPedido(order: MlOrder, mlAccountId: string) {
+  const orderId = String(order.id);
+  await prisma.$transaction([
+    prisma.pedido.upsert({
+      where: { id: orderId },
+      create: {
+        id: orderId,
+        mlAccountId,
+        status: order.status,
+        statusDetail: order.status_detail,
+        totalAmount: order.total_amount,
+        paidAmount: order.paid_amount,
+        currencyId: order.currency_id,
+        buyerNickname: order.buyer?.nickname,
+        mlDateCreated: new Date(order.date_created),
+        mlDateClosed: order.date_closed ? new Date(order.date_closed) : null,
+      },
+      update: {
+        status: order.status,
+        statusDetail: order.status_detail,
+        totalAmount: order.total_amount,
+        paidAmount: order.paid_amount,
+        currencyId: order.currency_id,
+        buyerNickname: order.buyer?.nickname,
+        mlDateClosed: order.date_closed ? new Date(order.date_closed) : null,
+        lastSyncedAt: new Date(),
+      },
+    }),
+    prisma.pedidoItem.deleteMany({ where: { pedidoId: orderId } }),
+    prisma.pedidoItem.createMany({
+      data: order.order_items.map((orderItem) => ({
+        pedidoId: orderId,
+        itemId: orderItem.item?.id,
+        title: orderItem.item?.title ?? "Item removido",
+        quantity: orderItem.quantity,
+        unitPrice: orderItem.unit_price,
+      })),
+    }),
+  ]);
+}
+
 export async function syncPedidosAction(
   mlAccountId: string
 ): Promise<SyncResult> {
@@ -125,62 +169,55 @@ export async function syncPedidosAction(
 
   try {
     const accessToken = await getValidAccessToken(account);
-    const orders = await fetchAllOrders(account.sellerId, accessToken);
 
-    for (const order of orders) {
-      const orderId = String(order.id);
-      await prisma.$transaction([
-        prisma.pedido.upsert({
-          where: { id: orderId },
-          create: {
-            id: orderId,
-            mlAccountId: account.id,
-            status: order.status,
-            statusDetail: order.status_detail,
-            totalAmount: order.total_amount,
-            paidAmount: order.paid_amount,
-            currencyId: order.currency_id,
-            buyerNickname: order.buyer?.nickname,
-            mlDateCreated: new Date(order.date_created),
-            mlDateClosed: order.date_closed ? new Date(order.date_closed) : null,
-          },
-          update: {
-            status: order.status,
-            statusDetail: order.status_detail,
-            totalAmount: order.total_amount,
-            paidAmount: order.paid_amount,
-            currencyId: order.currency_id,
-            buyerNickname: order.buyer?.nickname,
-            mlDateClosed: order.date_closed ? new Date(order.date_closed) : null,
-            lastSyncedAt: new Date(),
-          },
-        }),
-        prisma.pedidoItem.deleteMany({ where: { pedidoId: orderId } }),
-        prisma.pedidoItem.createMany({
-          data: order.order_items.map((orderItem) => ({
-            pedidoId: orderId,
-            itemId: orderItem.item?.id,
-            title: orderItem.item?.title ?? "Item removido",
-            quantity: orderItem.quantity,
-            unitPrice: orderItem.unit_price,
-          })),
-        }),
-      ]);
-    }
+    // Busca ~12 meses de histórico enquanto esse período ainda não tiver
+    // sido totalmente coberto. Depois que o histórico inicial já estiver
+    // completo, cada sincronização busca só a partir do pedido mais
+    // recente já salvo (com 1 dia de folga, para pegar atualizações de
+    // status de pedidos recentes), o que deixa as sincronizações bem mais
+    // rápidas no dia a dia.
+    const historicoDesejadoDesde = new Date(
+      Date.now() - PEDIDOS_HISTORICO_INICIAL_DIAS * 24 * 60 * 60 * 1000
+    );
+    const { _min, _max } = await prisma.pedido.aggregate({
+      where: { mlAccountId: account.id },
+      _min: { mlDateCreated: true },
+      _max: { mlDateCreated: true },
+    });
+    const historicoCompleto =
+      _min.mlDateCreated !== null &&
+      _min.mlDateCreated.getTime() <= historicoDesejadoDesde.getTime();
+    const fromDate =
+      historicoCompleto && _max.mlDateCreated
+        ? new Date(_max.mlDateCreated.getTime() - 24 * 60 * 60 * 1000)
+        : historicoDesejadoDesde;
+
+    let synced = 0;
+    const total = await fetchAllOrders(
+      account.sellerId,
+      accessToken,
+      fromDate,
+      async (batch) => {
+        for (const order of batch) {
+          await upsertPedido(order, account.id);
+        }
+        synced += batch.length;
+      }
+    );
 
     await prisma.syncLog.update({
       where: { id: syncLog.id },
       data: {
         status: "concluido",
-        itemsSynced: orders.length,
-        itemsTotal: orders.length,
+        itemsSynced: synced,
+        itemsTotal: total,
         finishedAt: new Date(),
       },
     });
 
     revalidatePath("/pedidos");
 
-    return { ok: true, itemsSynced: orders.length };
+    return { ok: true, itemsSynced: synced };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro desconhecido.";
     await prisma.syncLog.update({

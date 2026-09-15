@@ -230,47 +230,98 @@ export type MlOrder = {
 
 const ORDERS_PAGE_SIZE = 50;
 // A busca por offset da API do Mercado Livre não permite ultrapassar 1000
-// resultados; contas com mais pedidos que isso precisariam de um filtro por
-// período (fora do escopo desta primeira versão).
+// resultados por período. Quando um período tem mais que isso, dividimos a
+// busca em dois períodos menores (recursivamente) até caber.
 const ORDERS_MAX_OFFSET = 1000;
+const MIN_SPLIT_RANGE_MS = 1000; // trava de segurança contra recursão infinita
 
-/** Busca todos os pedidos (vendas) do vendedor, da mais recente para a mais antiga. */
+function toMlDateParam(date: Date): string {
+  return date.toISOString().replace("Z", "-00:00");
+}
+
+async function fetchOrdersPage(
+  sellerId: string,
+  accessToken: string,
+  opts: { from: Date; to: Date; offset: number }
+): Promise<{ results: MlOrder[]; total: number }> {
+  const url = new URL(`${API_BASE_URL}/orders/search`);
+  url.searchParams.set("seller", sellerId);
+  url.searchParams.set("sort", "date_asc");
+  url.searchParams.set("offset", String(opts.offset));
+  url.searchParams.set("limit", String(ORDERS_PAGE_SIZE));
+  url.searchParams.set("order.date_created.from", toMlDateParam(opts.from));
+  url.searchParams.set("order.date_created.to", toMlDateParam(opts.to));
+
+  const response = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Não foi possível listar os pedidos (HTTP ${response.status})`
+    );
+  }
+  const data = (await response.json()) as {
+    results: MlOrder[];
+    paging: { total: number };
+  };
+  return { results: data.results, total: data.paging.total };
+}
+
+/**
+ * Busca todos os pedidos (vendas) do vendedor entre duas datas, chamando
+ * `onBatch` a cada lote encontrado (para permitir salvar no banco aos
+ * poucos). Contorna o limite de 1000 resultados da API dividindo o período
+ * em pedaços menores sempre que necessário. Retorna o total de pedidos
+ * processados.
+ */
 export async function fetchAllOrders(
   sellerId: string,
-  accessToken: string
-): Promise<MlOrder[]> {
-  const orders: MlOrder[] = [];
+  accessToken: string,
+  fromDate: Date,
+  onBatch: (orders: MlOrder[]) => Promise<void>
+): Promise<number> {
+  let total = 0;
 
-  for (let offset = 0; offset < ORDERS_MAX_OFFSET; offset += ORDERS_PAGE_SIZE) {
-    const url = new URL(`${API_BASE_URL}/orders/search`);
-    url.searchParams.set("seller", sellerId);
-    url.searchParams.set("sort", "date_desc");
-    url.searchParams.set("offset", String(offset));
-    url.searchParams.set("limit", String(ORDERS_PAGE_SIZE));
-
-    const response = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      cache: "no-store",
+  async function processRange(from: Date, to: Date): Promise<void> {
+    const first = await fetchOrdersPage(sellerId, accessToken, {
+      from,
+      to,
+      offset: 0,
     });
-    if (!response.ok) {
-      throw new Error(
-        `Não foi possível listar os pedidos (HTTP ${response.status})`
-      );
-    }
-    const data = (await response.json()) as {
-      results: MlOrder[];
-      paging: { total: number };
-    };
-
-    orders.push(...data.results);
 
     if (
-      data.results.length < ORDERS_PAGE_SIZE ||
-      orders.length >= data.paging.total
+      first.total > ORDERS_MAX_OFFSET &&
+      to.getTime() - from.getTime() > MIN_SPLIT_RANGE_MS
     ) {
-      break;
+      const mid = new Date((from.getTime() + to.getTime()) / 2);
+      await processRange(from, mid);
+      await processRange(new Date(mid.getTime() + 1), to);
+      return;
+    }
+
+    if (first.results.length > 0) {
+      await onBatch(first.results);
+      total += first.results.length;
+    }
+
+    const lastOffset = Math.min(first.total, ORDERS_MAX_OFFSET);
+    for (
+      let offset = ORDERS_PAGE_SIZE;
+      offset < lastOffset;
+      offset += ORDERS_PAGE_SIZE
+    ) {
+      const page = await fetchOrdersPage(sellerId, accessToken, {
+        from,
+        to,
+        offset,
+      });
+      if (page.results.length === 0) break;
+      await onBatch(page.results);
+      total += page.results.length;
     }
   }
 
-  return orders;
+  await processRange(fromDate, new Date());
+  return total;
 }
