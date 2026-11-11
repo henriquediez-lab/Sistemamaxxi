@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "build": "echo 'sem build necessario, o start roda o TypeScript direto'",
     "start": "tsx src/index.ts"
   },
   "dependencies": {
