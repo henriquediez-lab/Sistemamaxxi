@@ -128,3 +128,46 @@ model PedidoItem {
 
   @@index([pedidoId])
 }
+
+// Conversa de WhatsApp com um contato (cliente)
+model WhatsappContato {
+  id               String    @id @default(cuid())
+  telefone         String    @unique // número no formato do WhatsApp, ex: 5511999999999
+  nome             String?
+  setor            String? // rótulo livre (financeiro, suporte, vendas...), definido manualmente ou por automação
+  naoLida          Boolean   @default(false) // tem mensagem de entrada ainda não vista pela equipe
+  ultimaMensagemEm DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  mensagens WhatsappMensagem[]
+
+  @@index([ultimaMensagemEm])
+}
+
+// Mensagem trocada com um contato (recebida ou enviada)
+model WhatsappMensagem {
+  id          String          @id @default(cuid())
+  contatoId   String
+  contato     WhatsappContato @relation(fields: [contatoId], references: [id], onDelete: Cascade)
+  direcao     String // entrada | saida
+  texto       String
+  automatica  Boolean         @default(false) // true quando foi uma resposta automática (regra de palavra-chave)
+  enviadoPor  String? // e-mail de quem respondeu manualmente, quando aplicável
+  erro        String? // mensagem de erro, se falhou ao enviar
+  createdAt   DateTime        @default(now())
+
+  @@index([contatoId, createdAt])
+}
+
+// Regra de resposta automática por palavra-chave (primeiro atendimento / triagem)
+model WhatsappRegraAutomatica {
+  id           String   @id @default(cuid())
+  palavraChave String // texto buscado na mensagem recebida (sem acento, minúsculo)
+  resposta     String
+  setor        String? // se definido, marca o contato com esse setor ao disparar
+  ativo        Boolean  @default(true)
+  ordem        Int      @default(0) // regras com ordem menor são testadas primeiro
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
