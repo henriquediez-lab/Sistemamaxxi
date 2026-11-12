@@ -24,7 +24,7 @@ const CATEGORIAS: { titulo: string; emojis: string[] }[] = [
     titulo: "Trabalho",
     emojis: [
       "✅", "❌", "⏰", "📅", "📦", "🚚", "💰", "💳", "📞", "📍",
-      "🎉", "🔥", "⚠️", "📄", "📷", "🛒",
+      "🎉", "🔥", "⚠️", "📄", "📷", "🛒", "🎱",
     ],
   },
 ];
