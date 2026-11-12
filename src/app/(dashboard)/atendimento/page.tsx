@@ -3,8 +3,41 @@ import { prisma } from "@/lib/prisma";
 import { formatDateTimeBR } from "@/lib/format-date";
 import { getWorkerStatus } from "@/lib/whatsapp-worker";
 import { StatusRefresh } from "./status-refresh";
-import { ReplyForm } from "./reply-form";
+import { ThreadPanel, type MensagemThread } from "./thread-panel";
 import { QrImage } from "./qr-image";
+
+function Avatar({
+  fotoUrl,
+  nome,
+  tamanho = 40,
+}: {
+  fotoUrl: string | null | undefined;
+  nome: string;
+  tamanho?: number;
+}) {
+  if (fotoUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={fotoUrl}
+        alt={nome}
+        width={tamanho}
+        height={tamanho}
+        className="shrink-0 rounded-full object-cover"
+        style={{ width: tamanho, height: tamanho }}
+      />
+    );
+  }
+  const inicial = nome.trim().charAt(0).toUpperCase() || "?";
+  return (
+    <div
+      className="flex shrink-0 items-center justify-center rounded-full bg-slate-200 font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+      style={{ width: tamanho, height: tamanho, fontSize: tamanho / 2.2 }}
+    >
+      {inicial}
+    </div>
+  );
+}
 
 // Sempre reflete o estado atual das conversas e da conexão com o WhatsApp.
 export const dynamic = "force-dynamic";
@@ -46,9 +79,7 @@ export default async function AtendimentoPage({
     });
   }
 
-  let mensagens: Awaited<
-    ReturnType<typeof prisma.whatsappMensagem.findMany>
-  > = [];
+  let mensagens: MensagemThread[] = [];
   if (selectedContato) {
     if (selectedContato.naoLida) {
       await prisma.whatsappContato.update({
@@ -56,11 +87,33 @@ export default async function AtendimentoPage({
         data: { naoLida: false },
       });
     }
-    mensagens = await prisma.whatsappMensagem.findMany({
+    const mensagensDb = await prisma.whatsappMensagem.findMany({
       where: { contatoId: selectedContato.id },
       orderBy: { createdAt: "asc" },
       take: 300,
+      include: { respondendoA: true },
     });
+    mensagens = mensagensDb.map((mensagem) => ({
+      id: mensagem.id,
+      direcao: mensagem.direcao,
+      tipo: mensagem.tipo,
+      texto: mensagem.texto,
+      midiaUrl: mensagem.midiaUrl,
+      midiaMimetype: mensagem.midiaMimetype,
+      midiaNomeArquivo: mensagem.midiaNomeArquivo,
+      automatica: mensagem.automatica,
+      enviadoPor: mensagem.enviadoPor,
+      erro: mensagem.erro,
+      createdAtFormatado: formatDateTimeBR(mensagem.createdAt),
+      respondendoA: mensagem.respondendoA
+        ? {
+            id: mensagem.respondendoA.id,
+            texto: mensagem.respondendoA.texto,
+            tipo: mensagem.respondendoA.tipo,
+            direcao: mensagem.respondendoA.direcao,
+          }
+        : null,
+    }));
   }
 
   return (
@@ -141,25 +194,34 @@ export default async function AtendimentoPage({
                         : "hover:bg-slate-50 dark:hover:bg-slate-800/60"
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="truncate text-sm font-medium text-slate-900 dark:text-white">
-                        {contato.nome ?? contato.telefone}
-                      </p>
-                      {contato.naoLida && (
-                        <span className="h-2 w-2 shrink-0 rounded-full bg-yellow-500" />
-                      )}
-                    </div>
-                    <div className="mt-0.5 flex items-center gap-2">
-                      {contato.setor && (
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-                          {contato.setor}
-                        </span>
-                      )}
-                      {contato.ultimaMensagemEm && (
-                        <span className="text-xs text-slate-400">
-                          {formatDateTimeBR(contato.ultimaMensagemEm)}
-                        </span>
-                      )}
+                    <div className="flex items-center gap-3">
+                      <Avatar
+                        fotoUrl={contato.fotoUrl}
+                        nome={contato.nome ?? contato.telefone}
+                        tamanho={36}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="truncate text-sm font-medium text-slate-900 dark:text-white">
+                            {contato.nome ?? contato.telefone}
+                          </p>
+                          {contato.naoLida && (
+                            <span className="h-2 w-2 shrink-0 rounded-full bg-yellow-500" />
+                          )}
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-2">
+                          {contato.setor && (
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                              {contato.setor}
+                            </span>
+                          )}
+                          {contato.ultimaMensagemEm && (
+                            <span className="text-xs text-slate-400">
+                              {formatDateTimeBR(contato.ultimaMensagemEm)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </Link>
                 );
@@ -170,51 +232,23 @@ export default async function AtendimentoPage({
           <section className="flex flex-1 flex-col overflow-hidden">
             {selectedContato ? (
               <>
-                <div className="border-b border-slate-200 px-5 py-3 dark:border-slate-800">
-                  <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                    {selectedContato.nome ?? selectedContato.telefone}
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    {selectedContato.telefone}
-                    {selectedContato.setor && <> · {selectedContato.setor}</>}
-                  </p>
+                <div className="flex items-center gap-3 border-b border-slate-200 px-5 py-3 dark:border-slate-800">
+                  <Avatar
+                    fotoUrl={selectedContato.fotoUrl}
+                    nome={selectedContato.nome ?? selectedContato.telefone}
+                  />
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                      {selectedContato.nome ?? selectedContato.telefone}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {selectedContato.telefone}
+                      {selectedContato.setor && <> · {selectedContato.setor}</>}
+                    </p>
+                  </div>
                 </div>
 
-                <div className="flex-1 space-y-2 overflow-y-auto p-5">
-                  {mensagens.map((mensagem) => {
-                    const minha = mensagem.direcao === "saida";
-                    return (
-                      <div
-                        key={mensagem.id}
-                        className={`flex ${minha ? "justify-end" : "justify-start"}`}
-                      >
-                        <div
-                          className={`max-w-md rounded-2xl px-4 py-2 text-sm ${
-                            minha
-                              ? "bg-yellow-400 text-slate-900"
-                              : "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100"
-                          }`}
-                        >
-                          <p className="whitespace-pre-wrap">{mensagem.texto}</p>
-                          <p
-                            className={`mt-1 text-[10px] ${
-                              minha ? "text-slate-700" : "text-slate-400"
-                            }`}
-                          >
-                            {formatDateTimeBR(mensagem.createdAt)}
-                            {mensagem.automatica && " · automática"}
-                            {mensagem.enviadoPor &&
-                              mensagem.enviadoPor !== "celular" &&
-                              ` · ${mensagem.enviadoPor}`}
-                            {mensagem.erro && " · falhou ao enviar"}
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <ReplyForm contatoId={selectedContato.id} />
+                <ThreadPanel contatoId={selectedContato.id} mensagens={mensagens} />
               </>
             ) : (
               <div className="flex flex-1 items-center justify-center">

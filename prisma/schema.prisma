@@ -66,27 +66,27 @@ model SyncLog {
 
 // Anúncio (item) do Mercado Livre
 model Anuncio {
-  id                 String    @id // ML item id, ex: MLB123456789
-  mlAccountId        String
-  mlAccount          MlAccount @relation(fields: [mlAccountId], references: [id], onDelete: Cascade)
-  title              String
-  permalink          String?
-  thumbnail          String?
-  price              Float
-  currencyId         String    @default("BRL")
-  availableQuantity  Int       @default(0)
-  soldQuantity       Int       @default(0)
-  status             String // active | paused | closed | under_review | ...
-  condition          String?
-  listingTypeId      String?
-  categoryId         String?
-  catalogListing     Boolean   @default(false)
-  healthScore        Float? // "item health" retornado pelo Mercado Livre, quando disponível
-  mlDateCreated      DateTime?
-  mlLastUpdated      DateTime?
-  lastSyncedAt       DateTime  @default(now())
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  id                String    @id // ML item id, ex: MLB123456789
+  mlAccountId       String
+  mlAccount         MlAccount @relation(fields: [mlAccountId], references: [id], onDelete: Cascade)
+  title             String
+  permalink         String?
+  thumbnail         String?
+  price             Float
+  currencyId        String    @default("BRL")
+  availableQuantity Int       @default(0)
+  soldQuantity      Int       @default(0)
+  status            String // active | paused | closed | under_review | ...
+  condition         String?
+  listingTypeId     String?
+  categoryId        String?
+  catalogListing    Boolean   @default(false)
+  healthScore       Float? // "item health" retornado pelo Mercado Livre, quando disponível
+  mlDateCreated     DateTime?
+  mlLastUpdated     DateTime?
+  lastSyncedAt      DateTime  @default(now())
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@index([mlAccountId])
   @@index([status])
@@ -118,13 +118,13 @@ model Pedido {
 
 // Item de um pedido (um pedido pode ter vários produtos)
 model PedidoItem {
-  id         String @id @default(cuid())
-  pedidoId   String
-  pedido     Pedido @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
-  itemId     String? // ML item id do anúncio vendido, quando disponível
-  title      String
-  quantity   Int
-  unitPrice  Float
+  id        String  @id @default(cuid())
+  pedidoId  String
+  pedido    Pedido  @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  itemId    String? // ML item id do anúncio vendido, quando disponível
+  title     String
+  quantity  Int
+  unitPrice Float
 
   @@index([pedidoId])
 }
@@ -132,8 +132,9 @@ model PedidoItem {
 // Conversa de WhatsApp com um contato (cliente)
 model WhatsappContato {
   id               String    @id @default(cuid())
-  telefone         String    @unique // número no formato do WhatsApp, ex: 5511999999999
+  telefone         String    @unique // identificador do WhatsApp (número ou JID completo, ex: 5511999999999@s.whatsapp.net)
   nome             String?
+  fotoUrl          String? // foto de perfil do WhatsApp (atualizada quando chega mensagem nova)
   setor            String? // rótulo livre (financeiro, suporte, vendas...), definido manualmente ou por automação
   naoLida          Boolean   @default(false) // tem mensagem de entrada ainda não vista pela equipe
   ultimaMensagemEm DateTime?
@@ -147,17 +148,26 @@ model WhatsappContato {
 
 // Mensagem trocada com um contato (recebida ou enviada)
 model WhatsappMensagem {
-  id          String          @id @default(cuid())
-  contatoId   String
-  contato     WhatsappContato @relation(fields: [contatoId], references: [id], onDelete: Cascade)
-  direcao     String // entrada | saida
-  texto       String
-  automatica  Boolean         @default(false) // true quando foi uma resposta automática (regra de palavra-chave)
-  enviadoPor  String? // e-mail de quem respondeu manualmente, quando aplicável
-  erro        String? // mensagem de erro, se falhou ao enviar
-  createdAt   DateTime        @default(now())
+  id               String             @id @default(cuid())
+  contatoId        String
+  contato          WhatsappContato    @relation(fields: [contatoId], references: [id], onDelete: Cascade)
+  direcao          String // entrada | saida
+  waMessageId      String? // id da mensagem no próprio WhatsApp (usado para responder citando)
+  tipo             String             @default("texto") // texto | imagem | video | audio | documento
+  texto            String? // texto da mensagem, ou legenda quando for mídia
+  midiaUrl         String? // URL do arquivo (Vercel Blob), quando tipo != texto
+  midiaMimetype    String?
+  midiaNomeArquivo String? // nome original, principalmente para documentos
+  respondendoAId   String?
+  respondendoA     WhatsappMensagem?  @relation("RespostaCitada", fields: [respondendoAId], references: [id], onDelete: SetNull)
+  respostas        WhatsappMensagem[] @relation("RespostaCitada")
+  automatica       Boolean            @default(false) // true quando foi uma resposta automática (regra de palavra-chave)
+  enviadoPor       String? // e-mail de quem respondeu manualmente, quando aplicável
+  erro             String? // mensagem de erro, se falhou ao enviar
+  createdAt        DateTime           @default(now())
 
   @@index([contatoId, createdAt])
+  @@index([waMessageId])
 }
 
 // Regra de resposta automática por palavra-chave (primeiro atendimento / triagem)

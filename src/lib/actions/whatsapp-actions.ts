@@ -1,19 +1,34 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { put } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
-import { enviarMensagemWhatsapp } from "@/lib/whatsapp-worker";
+import {
+  enviarMensagemWhatsapp,
+  type TipoMidiaWhatsapp,
+} from "@/lib/whatsapp-worker";
 
 export type EnviarMensagemResult = { ok: true } | { ok: false; error: string };
 
+function tipoMidiaPorMimetype(mimetype: string): TipoMidiaWhatsapp {
+  if (mimetype.startsWith("image/")) return "imagem";
+  if (mimetype.startsWith("video/")) return "video";
+  if (mimetype.startsWith("audio/")) return "audio";
+  return "documento";
+}
+
 export async function enviarMensagemWhatsappAction(
-  contatoId: string,
-  texto: string
+  formData: FormData
 ): Promise<EnviarMensagemResult> {
-  const textoLimpo = texto.trim();
-  if (!textoLimpo) {
-    return { ok: false, error: "Digite uma mensagem." };
+  const contatoId = String(formData.get("contatoId") ?? "");
+  const texto = String(formData.get("texto") ?? "").trim();
+  const respondendoAId = String(formData.get("respondendoAId") ?? "") || undefined;
+  const arquivo = formData.get("arquivo");
+  const temArquivo = arquivo instanceof File && arquivo.size > 0;
+
+  if (!texto && !temArquivo) {
+    return { ok: false, error: "Digite uma mensagem ou anexe um arquivo." };
   }
 
   const contato = await prisma.whatsappContato.findUnique({
@@ -23,11 +38,51 @@ export async function enviarMensagemWhatsappAction(
     return { ok: false, error: "Contato não encontrado." };
   }
 
+  let midia: {
+    url: string;
+    tipo: TipoMidiaWhatsapp;
+    mimetype?: string;
+    nomeArquivo?: string;
+  } | undefined;
+
+  if (temArquivo) {
+    const arquivoFile = arquivo as File;
+    if (arquivoFile.size > 60 * 1024 * 1024) {
+      return { ok: false, error: "Arquivo muito grande (máximo 60 MB)." };
+    }
+    try {
+      const tipo = tipoMidiaPorMimetype(arquivoFile.type || "application/octet-stream");
+      const enviado = await put(
+        `whatsapp/saida/${tipo}/${crypto.randomUUID()}-${arquivoFile.name}`,
+        arquivoFile,
+        {
+          access: "public",
+          contentType: arquivoFile.type || undefined,
+          token: process.env.BLOB_READ_WRITE_TOKEN,
+        }
+      );
+      midia = {
+        url: enviado.url,
+        tipo,
+        mimetype: arquivoFile.type || undefined,
+        nomeArquivo: arquivoFile.name,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error:
+          error instanceof Error
+            ? `Falha ao enviar o arquivo: ${error.message}`
+            : "Falha ao enviar o arquivo.",
+      };
+    }
+  }
+
   const user = await getCurrentUser();
   const resultado = await enviarMensagemWhatsapp(
     contato.telefone,
-    textoLimpo,
-    user?.email
+    texto || undefined,
+    { enviadoPor: user?.email, respondendoAId, midia }
   );
 
   revalidatePath("/atendimento");

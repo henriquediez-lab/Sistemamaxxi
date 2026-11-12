@@ -1,6 +1,7 @@
 import { Boom } from "@hapi/boom";
 import makeWASocket, {
   DisconnectReason,
+  downloadMediaMessage,
   useMultiFileAuthState,
   type WAMessage,
   type WASocket,
@@ -8,10 +9,15 @@ import makeWASocket, {
 import pino from "pino";
 import {
   atualizarSetorContato,
+  buscarMensagemParaCitar,
+  buscarMensagemPorWaId,
   registrarMensagem,
   upsertContato,
+  type Contato,
+  type TipoMensagem,
 } from "./db.js";
 import { encontrarRegraCorrespondente } from "./automacao.js";
+import { subirMidia } from "./media.js";
 
 const AUTH_DIR = process.env.AUTH_DIR ?? "./auth_info_baileys";
 const logger = pino({ level: process.env.LOG_LEVEL ?? "warn" });
@@ -47,6 +53,79 @@ function construirJidEnvio(identificador: string): string {
   return identificador.includes("@")
     ? identificador
     : `${identificador}@s.whatsapp.net`;
+}
+
+/** Busca a foto de perfil do contato, se ainda não tivermos uma salva. */
+async function atualizarFotoSeNecessario(contato: Contato, jid: string) {
+  if (contato.fotoUrl || !socket) return;
+  try {
+    const url = await socket.profilePictureUrl(jid, "image");
+    if (url) {
+      await upsertContato(contato.telefone, null, url);
+    }
+  } catch {
+    // Contato sem foto, ou sem permissão pra ver — não é um erro de verdade.
+  }
+}
+
+type ConteudoMensagem = {
+  texto: string | null;
+  tipo: TipoMensagem;
+  mimetype?: string | null;
+  nomeArquivo?: string | null;
+  stanzaIdCitada?: string | null;
+};
+
+/** Extrai texto/legenda, tipo de mídia e contexto de citação de uma mensagem recebida. */
+function extrairConteudo(msg: WAMessage): ConteudoMensagem | null {
+  const m = msg.message;
+  if (!m) return null;
+
+  if (m.conversation) {
+    return { texto: m.conversation, tipo: "texto" };
+  }
+  if (m.extendedTextMessage) {
+    return {
+      texto: m.extendedTextMessage.text ?? null,
+      tipo: "texto",
+      stanzaIdCitada: m.extendedTextMessage.contextInfo?.stanzaId ?? null,
+    };
+  }
+  if (m.imageMessage) {
+    return {
+      texto: m.imageMessage.caption ?? null,
+      tipo: "imagem",
+      mimetype: m.imageMessage.mimetype,
+      stanzaIdCitada: m.imageMessage.contextInfo?.stanzaId ?? null,
+    };
+  }
+  if (m.videoMessage) {
+    return {
+      texto: m.videoMessage.caption ?? null,
+      tipo: "video",
+      mimetype: m.videoMessage.mimetype,
+      stanzaIdCitada: m.videoMessage.contextInfo?.stanzaId ?? null,
+    };
+  }
+  if (m.audioMessage) {
+    return {
+      texto: null,
+      tipo: "audio",
+      mimetype: m.audioMessage.mimetype,
+      stanzaIdCitada: m.audioMessage.contextInfo?.stanzaId ?? null,
+    };
+  }
+  if (m.documentMessage) {
+    return {
+      texto: m.documentMessage.caption ?? null,
+      tipo: "documento",
+      mimetype: m.documentMessage.mimetype,
+      nomeArquivo: m.documentMessage.fileName ?? null,
+      stanzaIdCitada: m.documentMessage.contextInfo?.stanzaId ?? null,
+    };
+  }
+
+  return null; // figurinha, localização, contato, enquete, etc. — não suportado por enquanto.
 }
 
 export async function iniciarConexao() {
@@ -109,29 +188,62 @@ export async function iniciarConexao() {
   return socket;
 }
 
+async function baixarMidia(
+  msg: WAMessage,
+  conteudo: ConteudoMensagem
+): Promise<string | null> {
+  if (!socket) return null;
+  try {
+    const buffer = await downloadMediaMessage(
+      msg,
+      "buffer",
+      {},
+      { logger, reuploadRequest: socket.updateMediaMessage }
+    );
+    return await subirMidia(buffer, {
+      pasta: `whatsapp/entrada/${conteudo.tipo}`,
+      mimetype: conteudo.mimetype,
+      nomeArquivo: conteudo.nomeArquivo,
+    });
+  } catch (erro) {
+    console.error("Erro ao baixar/subir mídia recebida:", erro);
+    return null;
+  }
+}
+
 async function processarMensagem(msg: WAMessage) {
   const remoteJid = msg.key.remoteJid;
   if (!remoteJid) return;
   if (remoteJid.endsWith("@g.us")) return; // ignora grupos
   if (remoteJid === "status@broadcast") return;
 
-  const texto =
-    (msg.message?.conversation as string | undefined) ??
-    (msg.message as { extendedTextMessage?: { text?: string } } | undefined)
-      ?.extendedTextMessage?.text ??
-    null;
-
-  if (!texto) return; // ignora mídia/áudio/figurinha por enquanto
+  const conteudo = extrairConteudo(msg);
+  if (!conteudo) return; // figurinha/localização/etc, ainda não suportado
+  if (!conteudo.texto && conteudo.tipo === "texto") return; // mensagem de texto vazia
 
   const telefone = normalizarJid(remoteJid);
   const contato = await upsertContato(telefone, msg.pushName ?? null);
+  await atualizarFotoSeNecessario(contato, telefone);
+
+  const respondendoA = conteudo.stanzaIdCitada
+    ? await buscarMensagemPorWaId(contato.id, conteudo.stanzaIdCitada)
+    : null;
+
+  const midiaUrl =
+    conteudo.tipo !== "texto" ? await baixarMidia(msg, conteudo) : null;
 
   if (msg.key.fromMe) {
     // Resposta enviada direto pelo celular (fora do painel) — registra para o histórico ficar completo.
     await registrarMensagem({
       contatoId: contato.id,
       direcao: "saida",
-      texto,
+      waMessageId: msg.key.id,
+      tipo: conteudo.tipo,
+      texto: conteudo.texto,
+      midiaUrl,
+      midiaMimetype: conteudo.mimetype,
+      midiaNomeArquivo: conteudo.nomeArquivo,
+      respondendoAId: respondendoA?.id,
       enviadoPor: "celular",
       marcarNaoLida: false,
     });
@@ -141,22 +253,81 @@ async function processarMensagem(msg: WAMessage) {
   await registrarMensagem({
     contatoId: contato.id,
     direcao: "entrada",
-    texto,
+    waMessageId: msg.key.id,
+    tipo: conteudo.tipo,
+    texto: conteudo.texto,
+    midiaUrl,
+    midiaMimetype: conteudo.mimetype,
+    midiaNomeArquivo: conteudo.nomeArquivo,
+    respondendoAId: respondendoA?.id,
   });
 
-  const regra = await encontrarRegraCorrespondente(texto);
-  if (regra) {
-    if (regra.setor) {
-      await atualizarSetorContato(contato.id, regra.setor);
+  if (conteudo.texto) {
+    const regra = await encontrarRegraCorrespondente(conteudo.texto);
+    if (regra) {
+      if (regra.setor) {
+        await atualizarSetorContato(contato.id, regra.setor);
+      }
+      await enviarMensagem(telefone, regra.resposta, { automatica: true });
     }
-    await enviarMensagem(telefone, regra.resposta, { automatica: true });
+  }
+}
+
+function construirConteudoEnvio(
+  texto: string | undefined,
+  midia?: {
+    url: string;
+    tipo: TipoMensagem;
+    mimetype?: string | null;
+    nomeArquivo?: string | null;
+  }
+) {
+  if (!midia || midia.tipo === "texto") {
+    return { text: texto ?? "" };
+  }
+
+  switch (midia.tipo) {
+    case "imagem":
+      return {
+        image: { url: midia.url },
+        ...(texto ? { caption: texto } : {}),
+        mimetype: midia.mimetype ?? undefined,
+      };
+    case "video":
+      return {
+        video: { url: midia.url },
+        ...(texto ? { caption: texto } : {}),
+        mimetype: midia.mimetype ?? undefined,
+      };
+    case "audio":
+      return {
+        audio: { url: midia.url },
+        mimetype: midia.mimetype ?? "audio/ogg; codecs=opus",
+      };
+    case "documento":
+      return {
+        document: { url: midia.url },
+        mimetype: midia.mimetype ?? "application/octet-stream",
+        fileName: midia.nomeArquivo ?? "arquivo",
+        ...(texto ? { caption: texto } : {}),
+      };
   }
 }
 
 export async function enviarMensagem(
   telefone: string,
-  texto: string,
-  opts?: { automatica?: boolean; enviadoPor?: string }
+  texto: string | undefined,
+  opts?: {
+    automatica?: boolean;
+    enviadoPor?: string;
+    midia?: {
+      url: string;
+      tipo: TipoMensagem;
+      mimetype?: string | null;
+      nomeArquivo?: string | null;
+    };
+    respondendoAId?: string;
+  }
 ) {
   if (!socket) throw new Error("WhatsApp não está conectado.");
 
@@ -182,14 +353,42 @@ export async function enviarMensagem(
 
   const contato = await upsertContato(telefone, null);
 
+  let quoted: WAMessage | undefined;
+  if (opts?.respondendoAId) {
+    const original = await buscarMensagemParaCitar(opts.respondendoAId);
+    if (original?.waMessageId) {
+      quoted = {
+        key: {
+          remoteJid: jid,
+          fromMe: original.direcao === "saida",
+          id: original.waMessageId,
+        },
+        message: { conversation: original.texto ?? "" },
+      };
+    }
+  }
+
+  const conteudoEnvio = construirConteudoEnvio(texto, opts?.midia);
+  const tipoRegistrado: TipoMensagem = opts?.midia?.tipo ?? "texto";
+
   try {
-    console.log(`Enviando mensagem para ${jid}...`);
-    const resultadoEnvio = await socket.sendMessage(jid, { text: texto });
+    console.log(`Enviando mensagem (${tipoRegistrado}) para ${jid}...`);
+    const resultadoEnvio = await socket.sendMessage(
+      jid,
+      conteudoEnvio,
+      quoted ? { quoted } : undefined
+    );
     console.log(`Resultado do envio para ${jid}:`, JSON.stringify(resultadoEnvio));
     await registrarMensagem({
       contatoId: contato.id,
       direcao: "saida",
-      texto,
+      waMessageId: resultadoEnvio?.key?.id,
+      tipo: tipoRegistrado,
+      texto: texto ?? null,
+      midiaUrl: opts?.midia?.url,
+      midiaMimetype: opts?.midia?.mimetype,
+      midiaNomeArquivo: opts?.midia?.nomeArquivo,
+      respondendoAId: opts?.respondendoAId,
       automatica: opts?.automatica ?? false,
       enviadoPor: opts?.enviadoPor ?? null,
       marcarNaoLida: false,
@@ -199,7 +398,12 @@ export async function enviarMensagem(
     await registrarMensagem({
       contatoId: contato.id,
       direcao: "saida",
-      texto,
+      tipo: tipoRegistrado,
+      texto: texto ?? null,
+      midiaUrl: opts?.midia?.url,
+      midiaMimetype: opts?.midia?.mimetype,
+      midiaNomeArquivo: opts?.midia?.nomeArquivo,
+      respondendoAId: opts?.respondendoAId,
       automatica: opts?.automatica ?? false,
       enviadoPor: opts?.enviadoPor ?? null,
       erro: erro instanceof Error ? erro.message : "Erro desconhecido",

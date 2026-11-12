@@ -49,10 +49,21 @@ export async function fetchWorkerQrImage(): Promise<Response | null> {
   }
 }
 
+export type TipoMidiaWhatsapp = "imagem" | "video" | "audio" | "documento";
+
 export async function enviarMensagemWhatsapp(
   telefone: string,
-  texto: string,
-  enviadoPor?: string
+  texto: string | undefined,
+  opts?: {
+    enviadoPor?: string;
+    respondendoAId?: string;
+    midia?: {
+      url: string;
+      tipo: TipoMidiaWhatsapp;
+      mimetype?: string;
+      nomeArquivo?: string;
+    };
+  }
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const config = getWorkerConfig();
   if (!config) {
@@ -66,8 +77,17 @@ export async function enviarMensagemWhatsapp(
         "Content-Type": "application/json",
         "x-worker-secret": config.secret,
       },
-      body: JSON.stringify({ telefone, texto, enviadoPor }),
-      signal: AbortSignal.timeout(20000),
+      body: JSON.stringify({
+        telefone,
+        texto,
+        enviadoPor: opts?.enviadoPor,
+        respondendoAId: opts?.respondendoAId,
+        midiaUrl: opts?.midia?.url,
+        midiaTipo: opts?.midia?.tipo,
+        midiaMimetype: opts?.midia?.mimetype,
+        midiaNomeArquivo: opts?.midia?.nomeArquivo,
+      }),
+      signal: AbortSignal.timeout(30000),
     });
     const data = (await response.json().catch(() => null)) as
       | { ok?: boolean; error?: string }

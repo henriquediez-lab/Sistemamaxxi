@@ -1,6 +1,9 @@
 import express from "express";
 import QRCode from "qrcode";
 import { enviarMensagem, getStatus } from "./whatsapp.js";
+import type { TipoMensagem } from "./db.js";
+
+const TIPOS_MIDIA_VALIDOS: TipoMensagem[] = ["imagem", "video", "audio", "documento"];
 
 const SECRET = process.env.WORKER_SECRET;
 const PROCESSO_INICIADO_EM = new Date().toISOString();
@@ -44,14 +47,47 @@ export function criarServidor() {
   });
 
   app.post("/send", async (req, res) => {
-    const { telefone, texto, enviadoPor } = req.body ?? {};
-    if (typeof telefone !== "string" || typeof texto !== "string") {
-      res.status(400).json({ error: "Informe telefone e texto." });
+    const {
+      telefone,
+      texto,
+      enviadoPor,
+      midiaUrl,
+      midiaTipo,
+      midiaMimetype,
+      midiaNomeArquivo,
+      respondendoAId,
+    } = req.body ?? {};
+
+    if (typeof telefone !== "string") {
+      res.status(400).json({ error: "Informe o telefone." });
       return;
     }
+    const temMidia = typeof midiaUrl === "string" && midiaUrl.length > 0;
+    if (!temMidia && typeof texto !== "string") {
+      res.status(400).json({ error: "Informe texto ou uma mídia." });
+      return;
+    }
+    if (temMidia && !TIPOS_MIDIA_VALIDOS.includes(midiaTipo)) {
+      res.status(400).json({ error: "midiaTipo inválido." });
+      return;
+    }
+
     console.log(`POST /send recebido para telefone ${telefone}`);
     try {
-      await enviarMensagem(telefone, texto, { enviadoPor });
+      await enviarMensagem(telefone, typeof texto === "string" ? texto : undefined, {
+        enviadoPor,
+        respondendoAId:
+          typeof respondendoAId === "string" ? respondendoAId : undefined,
+        midia: temMidia
+          ? {
+              url: midiaUrl,
+              tipo: midiaTipo as TipoMensagem,
+              mimetype: typeof midiaMimetype === "string" ? midiaMimetype : undefined,
+              nomeArquivo:
+                typeof midiaNomeArquivo === "string" ? midiaNomeArquivo : undefined,
+            }
+          : undefined,
+      });
       res.json({ ok: true });
     } catch (erro) {
       console.error("Erro no handler /send:", erro);
