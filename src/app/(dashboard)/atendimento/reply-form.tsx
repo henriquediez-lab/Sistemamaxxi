@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { enviarMensagemWhatsappAction } from "@/lib/actions/whatsapp-actions";
+import { EmojiPicker } from "./emoji-picker";
 
 export type MensagemCitavel = {
   id: string;
@@ -37,6 +38,17 @@ export function ReplyForm({
   const formRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const arquivoRef = useRef<HTMLInputElement>(null);
+
+  function inserirEmoji(emoji: string) {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const inicio = textarea.selectionStart ?? textarea.value.length;
+    const fim = textarea.selectionEnd ?? textarea.value.length;
+    textarea.value = textarea.value.slice(0, inicio) + emoji + textarea.value.slice(fim);
+    const novaPosicao = inicio + emoji.length;
+    textarea.focus();
+    textarea.setSelectionRange(novaPosicao, novaPosicao);
+  }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -107,6 +119,7 @@ export function ReplyForm({
       )}
 
       <div className="flex items-end gap-2">
+        <EmojiPicker onSelecionar={inserirEmoji} />
         <input
           ref={arquivoRef}
           type="file"
