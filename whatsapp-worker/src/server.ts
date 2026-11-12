@@ -3,14 +3,18 @@ import QRCode from "qrcode";
 import { enviarMensagem, getStatus } from "./whatsapp.js";
 
 const SECRET = process.env.WORKER_SECRET;
+const PROCESSO_INICIADO_EM = new Date().toISOString();
+const VERSAO_CODIGO = "jid-fix-2026-11-12";
 
 export function criarServidor() {
   const app = express();
   app.use(express.json());
 
-  // Usado pelo Railway para checar se o serviço está de pé.
+  // Usado pelo Railway para checar se o serviço está de pé. Também serve
+  // para conferir, de fora, se o código rodando é o mais recente
+  // (processoIniciadoEm e versao ajudam a diagnosticar deploys presos).
   app.get("/health", (_req, res) => {
-    res.json({ ok: true });
+    res.json({ ok: true, processoIniciadoEm: PROCESSO_INICIADO_EM, versao: VERSAO_CODIGO });
   });
 
   app.use((req, res, next) => {
@@ -45,10 +49,12 @@ export function criarServidor() {
       res.status(400).json({ error: "Informe telefone e texto." });
       return;
     }
+    console.log(`POST /send recebido para telefone ${telefone}`);
     try {
       await enviarMensagem(telefone, texto, { enviadoPor });
       res.json({ ok: true });
     } catch (erro) {
+      console.error("Erro no handler /send:", erro);
       res.status(502).json({
         error: erro instanceof Error ? erro.message : "Erro ao enviar mensagem.",
       });
