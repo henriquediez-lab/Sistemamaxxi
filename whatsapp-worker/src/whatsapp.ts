@@ -46,6 +46,24 @@ function normalizarJid(jid: string): string {
   return `${usuario.split(":")[0]}@${dominio}`;
 }
 
+// Resolve o identificador do contato pro formato "canônico" (número de
+// telefone, quando existir). O WhatsApp às vezes reporta a mesma pessoa
+// pelo telefone (@s.whatsapp.net) e às vezes pelo identificador novo
+// (@lid) — sem unificar isso, cada formato vira uma conversa diferente no
+// painel para o mesmo cliente.
+async function resolverJidCanonico(jid: string): Promise<string> {
+  const normalizado = normalizarJid(jid);
+  if (!socket || !normalizado.endsWith("@lid")) return normalizado;
+
+  try {
+    const pn = await socket.signalRepository.lidMapping.getPNForLID(normalizado);
+    if (pn) return normalizarJid(pn);
+  } catch (erro) {
+    console.warn(`Falha ao resolver telefone pro LID ${normalizado}:`, erro);
+  }
+  return normalizado;
+}
+
 // Monta o JID usado para enviar, a partir do identificador salvo no banco.
 // Identificadores antigos (salvos antes dessa correção) são só dígitos, sem
 // "@" — nesse caso assume o domínio clássico por compatibilidade.
@@ -243,8 +261,12 @@ async function processarMensagem(msg: WAMessage) {
   if (!conteudo) return; // figurinha/localização/etc, ainda não suportado
   if (!conteudo.texto && conteudo.tipo === "texto") return; // mensagem de texto vazia
 
-  const telefone = normalizarJid(remoteJid);
-  const contato = await upsertContato(telefone, msg.pushName ?? null);
+  const telefone = await resolverJidCanonico(remoteJid);
+  // O "pushName" de uma mensagem enviada por nós mesmos (fromMe) é o nome
+  // do nosso próprio perfil (ex: "Maxxi Tacos"), não o do cliente — por
+  // isso só usamos o pushName em mensagens recebidas de verdade.
+  const nomeContato = msg.key.fromMe ? null : msg.pushName ?? null;
+  const contato = await upsertContato(telefone, nomeContato);
   await atualizarFotoSeNecessario(contato, telefone);
 
   const respondendoA = conteudo.stanzaIdCitada
