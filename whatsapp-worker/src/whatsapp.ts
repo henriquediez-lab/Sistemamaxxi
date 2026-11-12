@@ -76,9 +76,31 @@ type ConteudoMensagem = {
   stanzaIdCitada?: string | null;
 };
 
+// O WhatsApp às vezes embrulha a mensagem de verdade dentro de camadas como
+// "mensagem efêmera" ou "visualização única" (fotos/vídeos que somem depois
+// de abrir). Sem desembrulhar isso, a mensagem real fica invisível pro
+// código — ela chega, mas nenhum dos campos esperados (imageMessage,
+// videoMessage etc.) é encontrado no nível errado.
+function desembrulhar(
+  mensagem: NonNullable<WAMessage["message"]>
+): NonNullable<WAMessage["message"]> {
+  let atual = mensagem;
+  for (let i = 0; i < 3; i++) {
+    const interna =
+      atual.ephemeralMessage?.message ??
+      atual.viewOnceMessage?.message ??
+      atual.viewOnceMessageV2?.message ??
+      atual.viewOnceMessageV2Extension?.message ??
+      null;
+    if (!interna) break;
+    atual = interna;
+  }
+  return atual;
+}
+
 /** Extrai texto/legenda, tipo de mídia e contexto de citação de uma mensagem recebida. */
 function extrairConteudo(msg: WAMessage): ConteudoMensagem | null {
-  const m = msg.message;
+  const m = msg.message ? desembrulhar(msg.message) : null;
   if (!m) return null;
 
   if (m.conversation) {
