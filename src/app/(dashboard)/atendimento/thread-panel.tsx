@@ -35,18 +35,77 @@ function QuotePreview({ mensagem }: { mensagem: MensagemCitavel }) {
   );
 }
 
-function ConteudoMensagem({ mensagem }: { mensagem: MensagemThread }) {
+function MediaLightbox({
+  url,
+  nome,
+  onFechar,
+}: {
+  url: string;
+  nome?: string | null;
+  onFechar: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6"
+      onClick={onFechar}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt={nome ?? "Imagem ampliada"}
+        className="max-h-full max-w-full rounded-lg object-contain"
+        onClick={(e) => e.stopPropagation()}
+      />
+      <div className="absolute right-6 top-6 flex gap-2">
+        <a
+          href={url}
+          download={nome ?? undefined}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          title="Baixar"
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20"
+        >
+          ⬇
+        </a>
+        <button
+          type="button"
+          onClick={onFechar}
+          title="Fechar"
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ConteudoMensagem({
+  mensagem,
+  onAbrirImagem,
+}: {
+  mensagem: MensagemThread;
+  onAbrirImagem: (url: string) => void;
+}) {
   switch (mensagem.tipo) {
     case "imagem":
       return (
         <div>
           {mensagem.midiaUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={mensagem.midiaUrl}
-              alt="Imagem enviada"
-              className="max-h-72 rounded-lg object-cover"
-            />
+            <button
+              type="button"
+              onClick={() => onAbrirImagem(mensagem.midiaUrl!)}
+              className="block cursor-zoom-in"
+              title="Clique para ampliar"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={mensagem.midiaUrl}
+                alt="Imagem enviada"
+                className="max-h-72 rounded-lg object-cover"
+              />
+            </button>
           )}
           {mensagem.texto && (
             <p className="mt-1 whitespace-pre-wrap">{mensagem.texto}</p>
@@ -57,10 +116,25 @@ function ConteudoMensagem({ mensagem }: { mensagem: MensagemThread }) {
       return (
         <div>
           {mensagem.midiaUrl && (
-            <video src={mensagem.midiaUrl} controls className="max-h-72 rounded-lg" />
+            <video
+              src={mensagem.midiaUrl}
+              controls
+              className="max-h-72 rounded-lg"
+            />
           )}
           {mensagem.texto && (
             <p className="mt-1 whitespace-pre-wrap">{mensagem.texto}</p>
+          )}
+          {mensagem.midiaUrl && (
+            <a
+              href={mensagem.midiaUrl}
+              download
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 inline-block text-xs underline opacity-70 hover:opacity-100"
+            >
+              ⬇ Baixar vídeo
+            </a>
           )}
         </div>
       );
@@ -96,9 +170,13 @@ export function ThreadPanel({
   mensagens: MensagemThread[];
 }) {
   const [mensagemCitada, setMensagemCitada] = useState<MensagemCitavel | null>(null);
+  const [imagemAberta, setImagemAberta] = useState<string | null>(null);
 
   return (
     <>
+      {imagemAberta && (
+        <MediaLightbox url={imagemAberta} onFechar={() => setImagemAberta(null)} />
+      )}
       <div className="flex-1 space-y-2 overflow-y-auto p-5">
         {mensagens.map((mensagem) => {
           const minha = mensagem.direcao === "saida";
@@ -134,7 +212,10 @@ export function ThreadPanel({
                 {mensagem.respondendoA && (
                   <QuotePreview mensagem={mensagem.respondendoA} />
                 )}
-                <ConteudoMensagem mensagem={mensagem} />
+                <ConteudoMensagem
+                  mensagem={mensagem}
+                  onAbrirImagem={setImagemAberta}
+                />
                 <p
                   className={`mt-1 text-[10px] ${
                     minha ? "text-slate-700" : "text-slate-400"
