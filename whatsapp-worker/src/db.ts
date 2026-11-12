@@ -12,7 +12,11 @@ export type Contato = {
   fotoUrl: string | null;
   setor: string | null;
   naoLida: boolean;
+  ultimaMensagemEm: Date | null;
+  aguardandoEscolhaSetor: boolean;
 };
+
+const CAMPOS_CONTATO = `id, telefone, nome, "fotoUrl", setor, "naoLida", "ultimaMensagemEm", "aguardandoEscolhaSetor"`;
 
 /** Cria o contato se não existir, ou atualiza nome/foto quando informados. */
 export async function upsertContato(
@@ -21,7 +25,7 @@ export async function upsertContato(
   fotoUrl?: string | null
 ): Promise<Contato> {
   const existente = await pool.query<Contato>(
-    `SELECT id, telefone, nome, "fotoUrl", setor, "naoLida" FROM "WhatsappContato" WHERE telefone = $1`,
+    `SELECT ${CAMPOS_CONTATO} FROM "WhatsappContato" WHERE telefone = $1`,
     [telefone]
   );
 
@@ -43,10 +47,48 @@ export async function upsertContato(
   const inserido = await pool.query<Contato>(
     `INSERT INTO "WhatsappContato" (id, telefone, nome, "fotoUrl", "createdAt", "updatedAt")
      VALUES ($1, $2, $3, $4, now(), now())
-     RETURNING id, telefone, nome, "fotoUrl", setor, "naoLida"`,
+     RETURNING ${CAMPOS_CONTATO}`,
     [id, telefone, nome, fotoUrl ?? null]
   );
   return inserido.rows[0];
+}
+
+export async function marcarAguardandoEscolhaSetor(
+  contatoId: string,
+  valor: boolean
+) {
+  await pool.query(
+    `UPDATE "WhatsappContato" SET "aguardandoEscolhaSetor" = $1, "updatedAt" = now() WHERE id = $2`,
+    [valor, contatoId]
+  );
+}
+
+export type SaudacaoConfig = { ativo: boolean; mensagem: string };
+
+export async function buscarSaudacaoConfig(): Promise<SaudacaoConfig | null> {
+  const resultado = await pool.query<SaudacaoConfig>(
+    `SELECT ativo, mensagem FROM "WhatsappSaudacaoConfig" WHERE id = 'default'`
+  );
+  return resultado.rows[0] ?? null;
+}
+
+export type SetorOpcao = { numero: number; nome: string };
+
+export async function listarOpcoesSetor(): Promise<SetorOpcao[]> {
+  const resultado = await pool.query<SetorOpcao>(
+    `SELECT numero, nome FROM "WhatsappSetorOpcao" ORDER BY ordem ASC, numero ASC`
+  );
+  return resultado.rows;
+}
+
+export async function buscarOpcaoSetorPorNumero(
+  numero: number
+): Promise<SetorOpcao | null> {
+  const resultado = await pool.query<SetorOpcao>(
+    `SELECT numero, nome FROM "WhatsappSetorOpcao" WHERE numero = $1`,
+    [numero]
+  );
+  return resultado.rows[0] ?? null;
 }
 
 export type TipoMensagem = "texto" | "imagem" | "video" | "audio" | "documento";

@@ -131,18 +131,22 @@ model PedidoItem {
 
 // Conversa de WhatsApp com um contato (cliente)
 model WhatsappContato {
-  id               String    @id @default(cuid())
-  telefone         String    @unique // identificador do WhatsApp (número ou JID completo, ex: 5511999999999@s.whatsapp.net)
-  nome             String?
-  fotoUrl          String? // foto de perfil do WhatsApp (atualizada quando chega mensagem nova)
-  setor            String? // rótulo livre (financeiro, suporte, vendas...), definido manualmente ou por automação
-  naoLida          Boolean   @default(false) // tem mensagem de entrada ainda não vista pela equipe
-  arquivada        Boolean   @default(false)
-  ultimaMensagemEm DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id                     String    @id @default(cuid())
+  telefone               String    @unique // identificador do WhatsApp (número ou JID completo, ex: 5511999999999@s.whatsapp.net)
+  nome                   String?
+  fotoUrl                String? // foto de perfil do WhatsApp (atualizada quando chega mensagem nova)
+  setor                  String? // rótulo livre (financeiro, suporte, vendas...), definido manualmente ou por automação
+  naoLida                Boolean   @default(false) // tem mensagem de entrada ainda não vista pela equipe
+  arquivada              Boolean   @default(false)
+  // true logo depois de mandar a saudação com o menu de setores, enquanto
+  // aguarda o cliente responder com o número da opção escolhida
+  aguardandoEscolhaSetor Boolean   @default(false)
+  ultimaMensagemEm       DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   mensagens WhatsappMensagem[]
+  etiquetas WhatsappContatoEtiqueta[]
 
   @@index([ultimaMensagemEm])
 }
@@ -181,4 +185,51 @@ model WhatsappRegraAutomatica {
   ordem        Int      @default(0) // regras com ordem menor são testadas primeiro
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+// Configuração única da saudação automática (singleton, id sempre "default")
+model WhatsappSaudacaoConfig {
+  id        String   @id @default("default")
+  ativo     Boolean  @default(true)
+  mensagem  String   @default("Olá! 👋 Bem-vindo(a). Pra agilizar o atendimento, escolha uma opção:")
+  updatedAt DateTime @updatedAt
+}
+
+// Opção de setor mostrada no menu da saudação automática (ex: "1 - Vendas")
+model WhatsappSetorOpcao {
+  id        String   @id @default(cuid())
+  numero    Int      @unique
+  nome      String
+  ordem     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Etiqueta livre pra organizar conversas por assunto (ex: "Urgente", "Aguardando pagamento")
+model WhatsappEtiqueta {
+  id        String                    @id @default(cuid())
+  nome      String                    @unique
+  cor       String                    @default("#25D366")
+  createdAt DateTime                  @default(now())
+  contatos  WhatsappContatoEtiqueta[]
+}
+
+// Relação N:N entre contato e etiqueta
+model WhatsappContatoEtiqueta {
+  contatoId  String
+  contato    WhatsappContato  @relation(fields: [contatoId], references: [id], onDelete: Cascade)
+  etiquetaId String
+  etiqueta   WhatsappEtiqueta @relation(fields: [etiquetaId], references: [id], onDelete: Cascade)
+  createdAt  DateTime         @default(now())
+
+  @@id([contatoId, etiquetaId])
+}
+
+// Resposta pronta que o atendente insere digitando "/atalho" na caixa de texto
+model WhatsappRespostaRapida {
+  id        String   @id @default(cuid())
+  atalho    String   @unique // sem a barra, ex: "horario"
+  texto     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

@@ -23,21 +23,67 @@ function resumoMensagem(msg: MensagemCitavel): string {
   return RESUMO_TIPO[msg.tipo] ?? "Mensagem";
 }
 
+type RespostaRapida = { atalho: string; texto: string };
+
 export function ReplyForm({
   contatoId,
   mensagemCitada,
   onCancelarCitacao,
+  respostasRapidas,
 }: {
   contatoId: string;
   mensagemCitada: MensagemCitavel | null;
   onCancelarCitacao: () => void;
+  respostasRapidas: RespostaRapida[];
 }) {
   const [isPending, startTransition] = useTransition();
   const [erro, setErro] = useState<string | null>(null);
   const [nomeArquivo, setNomeArquivo] = useState<string | null>(null);
+  const [sugestoes, setSugestoes] = useState<RespostaRapida[] | null>(null);
+  const [sugestaoIndex, setSugestaoIndex] = useState(0);
   const formRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const arquivoRef = useRef<HTMLInputElement>(null);
+  const comandoRef = useRef<{ inicio: number; fim: number } | null>(null);
+
+  function selecionarSugestao(resposta: RespostaRapida) {
+    const textarea = textareaRef.current;
+    if (!textarea || !comandoRef.current) return;
+    const { inicio, fim } = comandoRef.current;
+    textarea.value =
+      textarea.value.slice(0, inicio) + resposta.texto + textarea.value.slice(fim);
+    const novaPosicao = inicio + resposta.texto.length;
+    textarea.focus();
+    textarea.setSelectionRange(novaPosicao, novaPosicao);
+    setSugestoes(null);
+    comandoRef.current = null;
+  }
+
+  function handleInput(e: React.FormEvent<HTMLTextAreaElement>) {
+    if (respostasRapidas.length === 0) return;
+    const textarea = e.currentTarget;
+    const posicaoCursor = textarea.selectionStart;
+    const antesDoCursor = textarea.value.slice(0, posicaoCursor);
+    const match = antesDoCursor.match(/(?:^|\s)\/(\w*)$/);
+    if (!match) {
+      setSugestoes(null);
+      comandoRef.current = null;
+      return;
+    }
+    const fragmento = match[1].toLowerCase();
+    const inicio = posicaoCursor - 1 - match[1].length;
+    const filtradas = respostasRapidas.filter((r) =>
+      r.atalho.toLowerCase().startsWith(fragmento)
+    );
+    if (filtradas.length === 0) {
+      setSugestoes(null);
+      comandoRef.current = null;
+      return;
+    }
+    comandoRef.current = { inicio, fim: posicaoCursor };
+    setSugestoes(filtradas);
+    setSugestaoIndex(0);
+  }
 
   function inserirEmoji(emoji: string) {
     const textarea = textareaRef.current;
@@ -66,6 +112,8 @@ export function ReplyForm({
       if (resultado.ok) {
         formRef.current?.reset();
         setNomeArquivo(null);
+        setSugestoes(null);
+        comandoRef.current = null;
         onCancelarCitacao();
       } else {
         setErro(resultado.error);
@@ -101,6 +149,32 @@ export function ReplyForm({
 
       {erro && (
         <p className="mb-2 text-xs text-red-600 dark:text-red-400">{erro}</p>
+      )}
+      {sugestoes && (
+        <div className="mb-2 max-h-40 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-[#233138]">
+          {sugestoes.map((sugestao, i) => (
+            <button
+              key={sugestao.atalho}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                selecionarSugestao(sugestao);
+              }}
+              className={`block w-full px-3 py-2 text-left text-xs ${
+                i === sugestaoIndex
+                  ? "bg-[#f0f2f5] dark:bg-[#182229]"
+                  : "hover:bg-[#f5f6f6] dark:hover:bg-[#182229]"
+              }`}
+            >
+              <span className="font-semibold text-[#008069] dark:text-[#06cf9c]">
+                /{sugestao.atalho}
+              </span>{" "}
+              <span className="text-slate-500 dark:text-slate-400">
+                {sugestao.texto}
+              </span>
+            </button>
+          ))}
+        </div>
       )}
       {nomeArquivo && (
         <div className="mb-2 flex items-center justify-between gap-2 rounded-lg bg-[#f0f2f5] px-3 py-1.5 text-xs text-slate-600 dark:bg-[#202c33] dark:text-slate-300">
@@ -142,7 +216,30 @@ export function ReplyForm({
           rows={1}
           placeholder="Digite uma mensagem"
           disabled={isPending}
+          onInput={handleInput}
           onKeyDown={(e) => {
+            if (sugestoes && sugestoes.length > 0) {
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setSugestaoIndex((i) => (i + 1) % sugestoes.length);
+                return;
+              }
+              if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setSugestaoIndex((i) => (i - 1 + sugestoes.length) % sugestoes.length);
+                return;
+              }
+              if (e.key === "Enter" || e.key === "Tab") {
+                e.preventDefault();
+                selecionarSugestao(sugestoes[sugestaoIndex]);
+                return;
+              }
+              if (e.key === "Escape") {
+                setSugestoes(null);
+                comandoRef.current = null;
+                return;
+              }
+            }
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               e.currentTarget.form?.requestSubmit();

@@ -165,9 +165,11 @@ function ConteudoMensagem({
 export function ThreadPanel({
   contatoId,
   mensagens,
+  respostasRapidas,
 }: {
   contatoId: string;
   mensagens: MensagemThread[];
+  respostasRapidas: { atalho: string; texto: string }[];
 }) {
   const [mensagemCitada, setMensagemCitada] = useState<MensagemCitavel | null>(null);
   const [imagemAberta, setImagemAberta] = useState<string | null>(null);
@@ -263,6 +265,7 @@ export function ThreadPanel({
         contatoId={contatoId}
         mensagemCitada={mensagemCitada}
         onCancelarCitacao={() => setMensagemCitada(null)}
+        respostasRapidas={respostasRapidas}
       />
     </>
   );

@@ -11,6 +11,10 @@ import {
   atualizarSetorContato,
   buscarMensagemParaCitar,
   buscarMensagemPorWaId,
+  buscarOpcaoSetorPorNumero,
+  buscarSaudacaoConfig,
+  listarOpcoesSetor,
+  marcarAguardandoEscolhaSetor,
   registrarMensagem,
   upsertContato,
   type Contato,
@@ -168,6 +172,26 @@ function extrairConteudo(msg: WAMessage): ConteudoMensagem | null {
   return null; // figurinha, localização, contato, enquete, etc. — não suportado por enquanto.
 }
 
+// Depois de tanto tempo sem o cliente mandar nada, a próxima mensagem dele
+// dispara a saudação automática de novo (nova "sessão" de atendimento).
+const INTERVALO_SAUDACAO_MS = 24 * 60 * 60 * 1000;
+
+const NUMERO_EMOJI: Record<number, string> = {
+  0: "0️⃣", 1: "1️⃣", 2: "2️⃣", 3: "3️⃣", 4: "4️⃣",
+  5: "5️⃣", 6: "6️⃣", 7: "7️⃣", 8: "8️⃣", 9: "9️⃣", 10: "🔟",
+};
+
+function montarMensagemSaudacao(
+  mensagem: string,
+  opcoes: { numero: number; nome: string }[]
+): string {
+  if (opcoes.length === 0) return mensagem;
+  const lista = opcoes
+    .map((o) => `${NUMERO_EMOJI[o.numero] ?? `${o.numero}.`} ${o.nome}`)
+    .join("\n");
+  return `${mensagem}\n\n${lista}`;
+}
+
 export async function iniciarConexao() {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
 
@@ -294,6 +318,22 @@ async function processarMensagem(msg: WAMessage) {
     return;
   }
 
+  // Se a saudação automática tinha acabado de perguntar o setor, a
+  // próxima mensagem do cliente é a escolha dele (ex: "2").
+  const aguardandoEscolha = contato.aguardandoEscolhaSetor;
+  let setorEscolhidoNome: string | null = null;
+  if (aguardandoEscolha && conteudo.tipo === "texto" && conteudo.texto) {
+    const numero = Number.parseInt(conteudo.texto.trim(), 10);
+    const opcao = Number.isInteger(numero)
+      ? await buscarOpcaoSetorPorNumero(numero)
+      : null;
+    await marcarAguardandoEscolhaSetor(contato.id, false);
+    if (opcao) {
+      await atualizarSetorContato(contato.id, opcao.nome);
+      setorEscolhidoNome = opcao.nome;
+    }
+  }
+
   await registrarMensagem({
     contatoId: contato.id,
     direcao: "entrada",
@@ -305,6 +345,38 @@ async function processarMensagem(msg: WAMessage) {
     midiaNomeArquivo: conteudo.nomeArquivo,
     respondendoAId: respondendoA?.id,
   });
+
+  if (setorEscolhidoNome) {
+    await enviarMensagem(
+      telefone,
+      `Perfeito! Você foi direcionado(a) para *${setorEscolhidoNome}*. Já já alguém da equipe te atende por aqui. 😊`,
+      { automatica: true }
+    );
+    return;
+  }
+
+  // Cliente sumiu por mais de 24h (ou é a primeira mensagem dele) — manda a
+  // saudação com o menu de setores antes de qualquer outra automação.
+  if (!aguardandoEscolha) {
+    const semInteracaoRecente =
+      !contato.ultimaMensagemEm ||
+      Date.now() - contato.ultimaMensagemEm.getTime() >= INTERVALO_SAUDACAO_MS;
+    if (semInteracaoRecente) {
+      const config = await buscarSaudacaoConfig();
+      if (config?.ativo) {
+        const opcoes = await listarOpcoesSetor();
+        await enviarMensagem(
+          telefone,
+          montarMensagemSaudacao(config.mensagem, opcoes),
+          { automatica: true }
+        );
+        if (opcoes.length > 0) {
+          await marcarAguardandoEscolhaSetor(contato.id, true);
+        }
+        return;
+      }
+    }
+  }
 
   if (conteudo.texto) {
     const regra = await encontrarRegraCorrespondente(conteudo.texto);

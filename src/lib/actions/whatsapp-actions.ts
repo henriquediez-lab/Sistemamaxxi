@@ -210,3 +210,91 @@ export async function excluirContatoAction(contatoId: string) {
   revalidatePath("/atendimento");
   revalidatePath("/atendimento/contatos");
 }
+
+// --- Saudação automática + setores ---
+
+export async function salvarSaudacaoAction(formData: FormData) {
+  const mensagem = String(formData.get("mensagem") ?? "").trim();
+  const ativo = formData.get("ativo") === "on";
+  if (!mensagem) return;
+
+  await prisma.whatsappSaudacaoConfig.upsert({
+    where: { id: "default" },
+    create: { id: "default", mensagem, ativo },
+    update: { mensagem, ativo },
+  });
+  revalidatePath("/atendimento/saudacao");
+}
+
+export async function criarOpcaoSetorAction(formData: FormData) {
+  const numero = Number(formData.get("numero"));
+  const nome = String(formData.get("nome") ?? "").trim();
+  if (!nome || !Number.isInteger(numero) || numero < 0) return;
+
+  await prisma.whatsappSetorOpcao.create({
+    data: { numero, nome, ordem: numero },
+  });
+  revalidatePath("/atendimento/saudacao");
+}
+
+export async function excluirOpcaoSetorAction(id: string) {
+  await prisma.whatsappSetorOpcao.delete({ where: { id } });
+  revalidatePath("/atendimento/saudacao");
+}
+
+// --- Etiquetas ---
+
+export async function criarEtiquetaAction(formData: FormData) {
+  const nome = String(formData.get("nome") ?? "").trim();
+  const cor = String(formData.get("cor") ?? "#25D366");
+  if (!nome) return;
+
+  await prisma.whatsappEtiqueta.create({ data: { nome, cor } });
+  revalidatePath("/atendimento/etiquetas");
+  revalidatePath("/atendimento");
+}
+
+export async function excluirEtiquetaAction(id: string) {
+  await prisma.whatsappEtiqueta.delete({ where: { id } });
+  revalidatePath("/atendimento/etiquetas");
+  revalidatePath("/atendimento");
+}
+
+export async function alternarEtiquetaContatoAction(
+  contatoId: string,
+  etiquetaId: string,
+  adicionar: boolean
+) {
+  if (adicionar) {
+    await prisma.whatsappContatoEtiqueta.upsert({
+      where: { contatoId_etiquetaId: { contatoId, etiquetaId } },
+      create: { contatoId, etiquetaId },
+      update: {},
+    });
+  } else {
+    await prisma.whatsappContatoEtiqueta
+      .delete({ where: { contatoId_etiquetaId: { contatoId, etiquetaId } } })
+      .catch(() => {});
+  }
+  revalidatePath("/atendimento");
+}
+
+// --- Respostas rápidas ---
+
+export async function criarRespostaRapidaAction(formData: FormData) {
+  const atalho = String(formData.get("atalho") ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^\/+/, "")
+    .replace(/\s+/g, "-");
+  const texto = String(formData.get("texto") ?? "").trim();
+  if (!atalho || !texto) return;
+
+  await prisma.whatsappRespostaRapida.create({ data: { atalho, texto } });
+  revalidatePath("/atendimento/respostas-rapidas");
+}
+
+export async function excluirRespostaRapidaAction(id: string) {
+  await prisma.whatsappRespostaRapida.delete({ where: { id } });
+  revalidatePath("/atendimento/respostas-rapidas");
+}

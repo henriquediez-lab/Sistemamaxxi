@@ -6,6 +6,7 @@ import { StatusRefresh } from "./status-refresh";
 import { ThreadPanel, type MensagemThread } from "./thread-panel";
 import { QrImage } from "./qr-image";
 import { ContactMenu } from "./contact-menu";
+import { ContactTags } from "./contact-tags";
 
 // Fundo sutil com textura de bolinhas, parecido com o papel de parede do
 // WhatsApp, pra área de conversa não ficar uma chapa lisa. Um tom neutro
@@ -69,6 +70,9 @@ export default async function AtendimentoPage({
     typeof params.contato === "string" ? params.contato : null;
   const busca = typeof params.q === "string" ? params.q.trim() : "";
   const verArquivadas = params.arquivadas === "1";
+  const filtroSetor = typeof params.setor === "string" ? params.setor : "";
+  const filtroEtiqueta =
+    typeof params.etiqueta === "string" ? params.etiqueta : "";
 
   const status = await getWorkerStatus();
   const statusInfo = STATUS_INFO[status] ?? STATUS_INFO.desconectado;
@@ -82,14 +86,34 @@ export default async function AtendimentoPage({
       }
     : {};
 
-  const [contatos, totalArquivadas] = await Promise.all([
-    prisma.whatsappContato.findMany({
-      where: { arquivada: verArquivadas, ...filtroBusca },
-      orderBy: { ultimaMensagemEm: "desc" },
-      take: 100,
-    }),
-    prisma.whatsappContato.count({ where: { arquivada: true } }),
-  ]);
+  const [contatos, totalArquivadas, setoresDb, todasEtiquetas, respostasRapidasDb] =
+    await Promise.all([
+      prisma.whatsappContato.findMany({
+        where: {
+          arquivada: verArquivadas,
+          ...filtroBusca,
+          ...(filtroSetor ? { setor: filtroSetor } : {}),
+          ...(filtroEtiqueta
+            ? { etiquetas: { some: { etiquetaId: filtroEtiqueta } } }
+            : {}),
+        },
+        orderBy: { ultimaMensagemEm: "desc" },
+        take: 100,
+        include: { etiquetas: { include: { etiqueta: true } } },
+      }),
+      prisma.whatsappContato.count({ where: { arquivada: true } }),
+      prisma.whatsappContato.findMany({
+        where: { setor: { not: null } },
+        select: { setor: true },
+        distinct: ["setor"],
+      }),
+      prisma.whatsappEtiqueta.findMany({ orderBy: { nome: "asc" } }),
+      prisma.whatsappRespostaRapida.findMany({ orderBy: { atalho: "asc" } }),
+    ]);
+
+  const setoresDisponiveis = setoresDb
+    .map((c) => c.setor)
+    .filter((s): s is string => Boolean(s));
 
   let selectedContato = selectedContatoId
     ? contatos.find((c) => c.id === selectedContatoId) ?? null
@@ -97,6 +121,7 @@ export default async function AtendimentoPage({
   if (!selectedContato && selectedContatoId) {
     selectedContato = await prisma.whatsappContato.findUnique({
       where: { id: selectedContatoId },
+      include: { etiquetas: { include: { etiqueta: true } } },
     });
   }
 
@@ -193,15 +218,15 @@ export default async function AtendimentoPage({
                   Contatos
                 </Link>
                 <Link
-                  href="/atendimento/regras"
+                  href="/atendimento/configuracoes"
                   className="font-medium text-[#008069] hover:underline dark:text-[#00a884]"
                 >
-                  Automático
+                  Configurações
                 </Link>
               </div>
             </div>
 
-            <form method="get" className="px-3 pb-2">
+            <form method="get" className="space-y-2 px-3 pb-2">
               {selectedContatoId && (
                 <input type="hidden" name="contato" value={selectedContatoId} />
               )}
@@ -213,6 +238,40 @@ export default async function AtendimentoPage({
                 placeholder="Buscar conversa"
                 className="w-full rounded-lg bg-[#f0f2f5] px-4 py-2 text-sm text-slate-700 outline-none placeholder:text-slate-500 focus:ring-2 focus:ring-[#25d366]/40 dark:bg-[#202c33] dark:text-slate-100 dark:placeholder:text-slate-400"
               />
+              {(setoresDisponiveis.length > 0 || todasEtiquetas.length > 0) && (
+                <div className="flex gap-2">
+                  <select
+                    name="setor"
+                    defaultValue={filtroSetor}
+                    className="flex-1 rounded-lg bg-[#f0f2f5] px-2 py-1.5 text-xs text-slate-700 outline-none dark:bg-[#202c33] dark:text-slate-100"
+                  >
+                    <option value="">Todos os setores</option>
+                    {setoresDisponiveis.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    name="etiqueta"
+                    defaultValue={filtroEtiqueta}
+                    className="flex-1 rounded-lg bg-[#f0f2f5] px-2 py-1.5 text-xs text-slate-700 outline-none dark:bg-[#202c33] dark:text-slate-100"
+                  >
+                    <option value="">Todas etiquetas</option>
+                    {todasEtiquetas.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.nome}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="submit"
+                    className="shrink-0 rounded-lg bg-[#00a884] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#06cf9c]"
+                  >
+                    Filtrar
+                  </button>
+                </div>
+              )}
             </form>
 
             {verArquivadas ? (
@@ -249,10 +308,17 @@ export default async function AtendimentoPage({
               ) : (
                 contatos.map((contato) => {
                   const ativo = contato.id === selectedContato?.id;
+                  const queryExtra = new URLSearchParams({
+                    contato: contato.id,
+                    ...(busca ? { q: busca } : {}),
+                    ...(verArquivadas ? { arquivadas: "1" } : {}),
+                    ...(filtroSetor ? { setor: filtroSetor } : {}),
+                    ...(filtroEtiqueta ? { etiqueta: filtroEtiqueta } : {}),
+                  }).toString();
                   return (
                     <Link
                       key={contato.id}
-                      href={`/atendimento?contato=${contato.id}${busca ? `&q=${encodeURIComponent(busca)}` : ""}${verArquivadas ? "&arquivadas=1" : ""}`}
+                      href={`/atendimento?${queryExtra}`}
                       className={`block border-b border-slate-100 px-4 py-3 transition dark:border-slate-800/60 ${
                         ativo
                           ? "bg-[#f0f2f5] dark:bg-[#2a3942]"
@@ -283,15 +349,25 @@ export default async function AtendimentoPage({
                             )}
                           </div>
                           <div className="mt-0.5 flex items-center justify-between gap-2">
-                            {contato.setor ? (
-                              <span className="truncate rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-                                {contato.setor}
-                              </span>
-                            ) : (
-                              <span className="truncate text-xs text-slate-400">
-                                {contato.telefone}
-                              </span>
-                            )}
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              {contato.setor ? (
+                                <span className="truncate rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                                  {contato.setor}
+                                </span>
+                              ) : (
+                                <span className="truncate text-xs text-slate-400">
+                                  {contato.telefone}
+                                </span>
+                              )}
+                              {contato.etiquetas.slice(0, 4).map((ce) => (
+                                <span
+                                  key={ce.etiquetaId}
+                                  title={ce.etiqueta.nome}
+                                  className="h-2 w-2 shrink-0 rounded-full"
+                                  style={{ backgroundColor: ce.etiqueta.cor }}
+                                />
+                              ))}
+                            </div>
                             {contato.naoLida && (
                               <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#25d366] text-[10px] font-bold text-white">
                                 •
@@ -318,7 +394,7 @@ export default async function AtendimentoPage({
                     fotoUrl={selectedContato.fotoUrl}
                     nome={selectedContato.nome ?? selectedContato.telefone}
                   />
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-slate-900 dark:text-white">
                       {selectedContato.nome ?? selectedContato.telefone}
                     </p>
@@ -326,6 +402,11 @@ export default async function AtendimentoPage({
                       {selectedContato.telefone}
                       {selectedContato.setor && <> · {selectedContato.setor}</>}
                     </p>
+                    <ContactTags
+                      contatoId={selectedContato.id}
+                      etiquetasContato={selectedContato.etiquetas.map((ce) => ce.etiqueta)}
+                      todasEtiquetas={todasEtiquetas}
+                    />
                   </div>
                   <ContactMenu
                     contatoId={selectedContato.id}
@@ -333,7 +414,11 @@ export default async function AtendimentoPage({
                   />
                 </div>
 
-                <ThreadPanel contatoId={selectedContato.id} mensagens={mensagens} />
+                <ThreadPanel
+                  contatoId={selectedContato.id}
+                  mensagens={mensagens}
+                  respostasRapidas={respostasRapidasDb}
+                />
               </>
             ) : (
               <div className="flex flex-1 items-center justify-center">
