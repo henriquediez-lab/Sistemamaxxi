@@ -137,6 +137,7 @@ model WhatsappContato {
   fotoUrl          String? // foto de perfil do WhatsApp (atualizada quando chega mensagem nova)
   setor            String? // rótulo livre (financeiro, suporte, vendas...), definido manualmente ou por automação
   naoLida          Boolean   @default(false) // tem mensagem de entrada ainda não vista pela equipe
+  arquivada        Boolean   @default(false)
   ultimaMensagemEm DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt

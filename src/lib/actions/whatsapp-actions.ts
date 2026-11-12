@@ -196,3 +196,17 @@ export async function limparTodasConversasAction() {
   revalidatePath("/atendimento");
   revalidatePath("/atendimento/contatos");
 }
+
+export async function arquivarContatoAction(contatoId: string, arquivada: boolean) {
+  await prisma.whatsappContato.update({
+    where: { id: contatoId },
+    data: { arquivada },
+  });
+  revalidatePath("/atendimento");
+}
+
+export async function excluirContatoAction(contatoId: string) {
+  await prisma.whatsappContato.delete({ where: { id: contatoId } });
+  revalidatePath("/atendimento");
+  revalidatePath("/atendimento/contatos");
+}

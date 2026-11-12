@@ -5,6 +5,7 @@ import { getWorkerStatus } from "@/lib/whatsapp-worker";
 import { StatusRefresh } from "./status-refresh";
 import { ThreadPanel, type MensagemThread } from "./thread-panel";
 import { QrImage } from "./qr-image";
+import { ContactMenu } from "./contact-menu";
 
 // Fundo sutil com textura de bolinhas, parecido com o papel de parede do
 // WhatsApp, pra área de conversa não ficar uma chapa lisa. Um tom neutro
@@ -67,22 +68,28 @@ export default async function AtendimentoPage({
   const selectedContatoId =
     typeof params.contato === "string" ? params.contato : null;
   const busca = typeof params.q === "string" ? params.q.trim() : "";
+  const verArquivadas = params.arquivadas === "1";
 
   const status = await getWorkerStatus();
   const statusInfo = STATUS_INFO[status] ?? STATUS_INFO.desconectado;
 
-  const contatos = await prisma.whatsappContato.findMany({
-    where: busca
-      ? {
-          OR: [
-            { nome: { contains: busca, mode: "insensitive" } },
-            { telefone: { contains: busca, mode: "insensitive" } },
-          ],
-        }
-      : undefined,
-    orderBy: { ultimaMensagemEm: "desc" },
-    take: 100,
-  });
+  const filtroBusca = busca
+    ? {
+        OR: [
+          { nome: { contains: busca, mode: "insensitive" as const } },
+          { telefone: { contains: busca, mode: "insensitive" as const } },
+        ],
+      }
+    : {};
+
+  const [contatos, totalArquivadas] = await Promise.all([
+    prisma.whatsappContato.findMany({
+      where: { arquivada: verArquivadas, ...filtroBusca },
+      orderBy: { ultimaMensagemEm: "desc" },
+      take: 100,
+    }),
+    prisma.whatsappContato.count({ where: { arquivada: true } }),
+  ]);
 
   let selectedContato = selectedContatoId
     ? contatos.find((c) => c.id === selectedContatoId) ?? null
@@ -198,6 +205,7 @@ export default async function AtendimentoPage({
               {selectedContatoId && (
                 <input type="hidden" name="contato" value={selectedContatoId} />
               )}
+              {verArquivadas && <input type="hidden" name="arquivadas" value="1" />}
               <input
                 type="text"
                 name="q"
@@ -207,10 +215,36 @@ export default async function AtendimentoPage({
               />
             </form>
 
+            {verArquivadas ? (
+              <Link
+                href="/atendimento"
+                className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-[#f5f6f6] dark:border-slate-800/60 dark:text-slate-200 dark:hover:bg-[#202c33]"
+              >
+                ← Conversas arquivadas
+              </Link>
+            ) : (
+              totalArquivadas > 0 && (
+                <Link
+                  href="/atendimento?arquivadas=1"
+                  className="flex items-center gap-3 border-b border-slate-100 px-4 py-3 text-sm text-slate-600 hover:bg-[#f5f6f6] dark:border-slate-800/60 dark:text-slate-300 dark:hover:bg-[#202c33]"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-200 text-base dark:bg-slate-700">
+                    📥
+                  </span>
+                  <span className="flex-1">Arquivadas</span>
+                  <span className="text-xs text-slate-400">{totalArquivadas}</span>
+                </Link>
+              )
+            )}
+
             <div className="flex-1 overflow-y-auto">
               {contatos.length === 0 ? (
                 <p className="p-4 text-sm text-slate-500 dark:text-slate-400">
-                  {busca ? "Nenhuma conversa encontrada." : "Nenhuma conversa ainda."}
+                  {busca
+                    ? "Nenhuma conversa encontrada."
+                    : verArquivadas
+                      ? "Nenhuma conversa arquivada."
+                      : "Nenhuma conversa ainda."}
                 </p>
               ) : (
                 contatos.map((contato) => {
@@ -218,7 +252,7 @@ export default async function AtendimentoPage({
                   return (
                     <Link
                       key={contato.id}
-                      href={`/atendimento?contato=${contato.id}${busca ? `&q=${encodeURIComponent(busca)}` : ""}`}
+                      href={`/atendimento?contato=${contato.id}${busca ? `&q=${encodeURIComponent(busca)}` : ""}${verArquivadas ? "&arquivadas=1" : ""}`}
                       className={`block border-b border-slate-100 px-4 py-3 transition dark:border-slate-800/60 ${
                         ativo
                           ? "bg-[#f0f2f5] dark:bg-[#2a3942]"
@@ -293,6 +327,10 @@ export default async function AtendimentoPage({
                       {selectedContato.setor && <> · {selectedContato.setor}</>}
                     </p>
                   </div>
+                  <ContactMenu
+                    contatoId={selectedContato.id}
+                    arquivada={selectedContato.arquivada}
+                  />
                 </div>
 
                 <ThreadPanel contatoId={selectedContato.id} mensagens={mensagens} />
