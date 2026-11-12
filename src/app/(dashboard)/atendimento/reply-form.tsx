@@ -65,12 +65,12 @@ export function ReplyForm({
     <form
       ref={formRef}
       onSubmit={handleSubmit}
-      className="border-t border-slate-200 p-4 dark:border-slate-800"
+      className="border-t border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-[#111b21]"
     >
       {mensagemCitada && (
-        <div className="mb-2 flex items-start justify-between gap-2 rounded-lg border-l-4 border-yellow-400 bg-slate-50 px-3 py-2 text-xs dark:bg-slate-800">
+        <div className="mb-2 flex items-start justify-between gap-2 rounded-lg border-l-4 border-[#06cf9c] bg-[#f0f2f5] px-3 py-2 text-xs dark:bg-[#202c33]">
           <div className="min-w-0">
-            <p className="font-medium text-slate-500 dark:text-slate-400">
+            <p className="font-medium text-[#008069] dark:text-[#06cf9c]">
               Respondendo
             </p>
             <p className="truncate text-slate-700 dark:text-slate-300">
@@ -91,7 +91,7 @@ export function ReplyForm({
         <p className="mb-2 text-xs text-red-600 dark:text-red-400">{erro}</p>
       )}
       {nomeArquivo && (
-        <div className="mb-2 flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-1.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+        <div className="mb-2 flex items-center justify-between gap-2 rounded-lg bg-[#f0f2f5] px-3 py-1.5 text-xs text-slate-600 dark:bg-[#202c33] dark:text-slate-300">
           <span className="truncate">📎 {nomeArquivo}</span>
           <button
             type="button"
@@ -119,15 +119,15 @@ export function ReplyForm({
           title="Anexar arquivo"
           disabled={isPending}
           onClick={() => arquivoRef.current?.click()}
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xl text-slate-500 transition hover:bg-[#f0f2f5] disabled:cursor-not-allowed disabled:opacity-60 dark:text-slate-300 dark:hover:bg-[#202c33]"
         >
           📎
         </button>
         <textarea
           ref={textareaRef}
           name="texto"
-          rows={2}
-          placeholder="Digite sua resposta..."
+          rows={1}
+          placeholder="Digite uma mensagem"
           disabled={isPending}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
@@ -135,14 +135,21 @@ export function ReplyForm({
               e.currentTarget.form?.requestSubmit();
             }
           }}
-          className="flex-1 resize-none rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+          className="max-h-32 flex-1 resize-none rounded-lg bg-[#f0f2f5] px-4 py-2.5 text-sm outline-none placeholder:text-slate-500 focus:ring-2 focus:ring-[#25d366]/40 dark:bg-[#202c33] dark:text-white dark:placeholder:text-slate-400"
         />
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-lg bg-yellow-400 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-60"
+          title="Enviar"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#00a884] text-white transition hover:bg-[#06cf9c] disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isPending ? "Enviando..." : "Enviar"}
+          {isPending ? (
+            <span className="text-xs">...</span>
+          ) : (
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+              <path d="M2.01 21 23 12 2.01 3 2 10l15 2-15 2z" />
+            </svg>
+          )}
         </button>
       </div>
     </form>

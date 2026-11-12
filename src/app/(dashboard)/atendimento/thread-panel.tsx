@@ -27,7 +27,7 @@ const RESUMO_TIPO: Record<string, string> = {
 
 function QuotePreview({ mensagem }: { mensagem: MensagemCitavel }) {
   return (
-    <div className="mb-1.5 rounded border-l-2 border-slate-400/60 bg-black/5 px-2 py-1 text-xs text-slate-600 dark:bg-white/10 dark:text-slate-300">
+    <div className="mb-1.5 rounded border-l-4 border-[#06cf9c] bg-black/5 px-2 py-1 text-xs text-slate-600 dark:bg-black/20 dark:text-slate-300">
       <p className="truncate">
         {mensagem.texto || RESUMO_TIPO[mensagem.tipo] || "Mensagem"}
       </p>
@@ -197,16 +197,16 @@ export function ThreadPanel({
                     })
                   }
                   title="Responder citando"
-                  className="shrink-0 rounded px-1.5 py-1 text-xs text-slate-400 opacity-0 transition hover:bg-slate-100 group-hover:opacity-100 dark:hover:bg-slate-800"
+                  className="shrink-0 rounded-full bg-white/70 px-1.5 py-1 text-xs text-slate-500 opacity-0 shadow-sm transition hover:bg-white group-hover:opacity-100 dark:bg-slate-800/70 dark:text-slate-300 dark:hover:bg-slate-800"
                 >
                   ↩
                 </button>
               )}
               <div
-                className={`max-w-md rounded-2xl px-4 py-2 text-sm ${
+                className={`max-w-md rounded-lg px-3 py-2 text-sm shadow-sm ${
                   minha
-                    ? "bg-yellow-400 text-slate-900"
-                    : "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100"
+                    ? "rounded-tr-none bg-[#d9fdd3] text-slate-900 dark:bg-[#005c4b] dark:text-slate-50"
+                    : "rounded-tl-none bg-white text-slate-800 dark:bg-[#202c33] dark:text-slate-100"
                 }`}
               >
                 {mensagem.respondendoA && (
@@ -217,16 +217,24 @@ export function ThreadPanel({
                   onAbrirImagem={setImagemAberta}
                 />
                 <p
-                  className={`mt-1 text-[10px] ${
-                    minha ? "text-slate-700" : "text-slate-400"
+                  className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${
+                    mensagem.erro
+                      ? "text-red-600 dark:text-red-400"
+                      : minha
+                        ? "text-slate-600 dark:text-slate-300"
+                        : "text-slate-400"
                   }`}
                 >
-                  {mensagem.createdAtFormatado}
-                  {mensagem.automatica && " · automática"}
+                  {mensagem.automatica && "automática · "}
                   {mensagem.enviadoPor &&
                     mensagem.enviadoPor !== "celular" &&
-                    ` · ${mensagem.enviadoPor}`}
-                  {mensagem.erro && " · falhou ao enviar"}
+                    `${mensagem.enviadoPor} · `}
+                  {mensagem.createdAtFormatado}
+                  {mensagem.erro
+                    ? " · falhou"
+                    : minha && (
+                        <span className="text-[#53bdeb]">✓✓</span>
+                      )}
                 </p>
               </div>
               {minha && (
@@ -241,7 +249,7 @@ export function ThreadPanel({
                     })
                   }
                   title="Responder citando"
-                  className="shrink-0 rounded px-1.5 py-1 text-xs text-slate-400 opacity-0 transition hover:bg-slate-100 group-hover:opacity-100 dark:hover:bg-slate-800"
+                  className="shrink-0 rounded-full bg-white/70 px-1.5 py-1 text-xs text-slate-500 opacity-0 shadow-sm transition hover:bg-white group-hover:opacity-100 dark:bg-slate-800/70 dark:text-slate-300 dark:hover:bg-slate-800"
                 >
                   ↩
                 </button>
