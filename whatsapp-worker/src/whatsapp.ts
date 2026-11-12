@@ -30,8 +30,23 @@ export function getStatus() {
   return { status: statusAtual, qr: statusAtual === "aguardando_qr" ? ultimoQrCode : null };
 }
 
-function extrairTelefone(jid: string): string {
-  return jid.split("@")[0].split(":")[0];
+// Normaliza o JID removendo o sufixo de dispositivo (ex: ":12"), mas
+// preservando o domínio (@s.whatsapp.net ou @lid). O WhatsApp vem migrando
+// contas para um identificador novo (LID) em vez do número de telefone
+// puro; tratar tudo como "número de telefone" faz o envio de volta falhar
+// silenciosamente (mensagem fica presa em "PENDING" para sempre).
+function normalizarJid(jid: string): string {
+  const [usuario, dominio] = jid.split("@");
+  return `${usuario.split(":")[0]}@${dominio}`;
+}
+
+// Monta o JID usado para enviar, a partir do identificador salvo no banco.
+// Identificadores antigos (salvos antes dessa correção) são só dígitos, sem
+// "@" — nesse caso assume o domínio clássico por compatibilidade.
+function construirJidEnvio(identificador: string): string {
+  return identificador.includes("@")
+    ? identificador
+    : `${identificador}@s.whatsapp.net`;
 }
 
 export async function iniciarConexao() {
@@ -108,7 +123,7 @@ async function processarMensagem(msg: WAMessage) {
 
   if (!texto) return; // ignora mídia/áudio/figurinha por enquanto
 
-  const telefone = extrairTelefone(remoteJid);
+  const telefone = normalizarJid(remoteJid);
   const contato = await upsertContato(telefone, msg.pushName ?? null);
 
   if (msg.key.fromMe) {
@@ -145,17 +160,24 @@ export async function enviarMensagem(
 ) {
   if (!socket) throw new Error("WhatsApp não está conectado.");
 
-  let jid = `${telefone}@s.whatsapp.net`;
-  try {
-    const resultados = await socket.onWhatsApp(telefone);
-    const resultado = resultados?.[0];
-    if (resultado?.exists && resultado.jid) {
-      jid = resultado.jid;
-    } else {
-      console.warn(`onWhatsApp não encontrou o número ${telefone}; usando JID construído manualmente.`);
+  let jid = construirJidEnvio(telefone);
+
+  // Só faz sentido resolver por número de telefone (onWhatsApp) quando o
+  // identificador salvo é mesmo um número puro (contato antigo, de antes
+  // dessa correção). Quando já temos o JID completo (@s.whatsapp.net ou
+  // @lid) vindo de uma mensagem real, ele é a fonte da verdade.
+  if (!telefone.includes("@")) {
+    try {
+      const resultados = await socket.onWhatsApp(telefone);
+      const resultado = resultados?.[0];
+      if (resultado?.exists && resultado.jid) {
+        jid = resultado.jid;
+      } else {
+        console.warn(`onWhatsApp não encontrou o número ${telefone}; usando JID construído manualmente.`);
+      }
+    } catch (erroResolucao) {
+      console.warn(`Falha ao resolver JID para ${telefone}:`, erroResolucao);
     }
-  } catch (erroResolucao) {
-    console.warn(`Falha ao resolver JID para ${telefone}:`, erroResolucao);
   }
 
   const contato = await upsertContato(telefone, null);
