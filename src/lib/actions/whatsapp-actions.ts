@@ -133,3 +133,55 @@ export async function excluirRegraAction(id: string) {
   await prisma.whatsappRegraAutomatica.delete({ where: { id } });
   revalidatePath("/atendimento/regras");
 }
+
+export type MesclarContatosResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Mescla dois contatos que na verdade são a mesma pessoa (ex: o WhatsApp
+ * identificou o mesmo cliente de duas formas diferentes em momentos
+ * distintos). Move as mensagens do contato removido para o mantido e
+ * completa dados que estiverem faltando (nome, foto, setor).
+ */
+export async function mesclarContatosAction(
+  contatoManterId: string,
+  contatoRemoverId: string
+): Promise<MesclarContatosResult> {
+  if (contatoManterId === contatoRemoverId) {
+    return { ok: false, error: "Selecione dois contatos diferentes." };
+  }
+
+  const [manter, remover] = await Promise.all([
+    prisma.whatsappContato.findUnique({ where: { id: contatoManterId } }),
+    prisma.whatsappContato.findUnique({ where: { id: contatoRemoverId } }),
+  ]);
+  if (!manter || !remover) {
+    return { ok: false, error: "Contato não encontrado." };
+  }
+
+  await prisma.$transaction([
+    prisma.whatsappMensagem.updateMany({
+      where: { contatoId: contatoRemoverId },
+      data: { contatoId: contatoManterId },
+    }),
+    prisma.whatsappContato.update({
+      where: { id: contatoManterId },
+      data: {
+        nome: manter.nome ?? remover.nome,
+        fotoUrl: manter.fotoUrl ?? remover.fotoUrl,
+        setor: manter.setor ?? remover.setor,
+        naoLida: manter.naoLida || remover.naoLida,
+        ultimaMensagemEm:
+          !manter.ultimaMensagemEm ||
+          (remover.ultimaMensagemEm &&
+            remover.ultimaMensagemEm > manter.ultimaMensagemEm)
+            ? remover.ultimaMensagemEm
+            : manter.ultimaMensagemEm,
+      },
+    }),
+    prisma.whatsappContato.delete({ where: { id: contatoRemoverId } }),
+  ]);
+
+  revalidatePath("/atendimento");
+  revalidatePath("/atendimento/contatos");
+  return { ok: true };
+}

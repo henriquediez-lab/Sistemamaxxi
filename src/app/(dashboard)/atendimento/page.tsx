@@ -130,12 +130,20 @@ export default async function AtendimentoPage({
             </p>
           </div>
         </div>
-        <Link
-          href="/atendimento/regras"
-          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
-        >
-          Respostas automáticas
-        </Link>
+        <div className="flex gap-2">
+          <Link
+            href="/atendimento/contatos"
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            Contatos
+          </Link>
+          <Link
+            href="/atendimento/regras"
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            Respostas automáticas
+          </Link>
+        </div>
       </div>
 
       {status === "nao_configurado" && (
