@@ -185,3 +185,14 @@ export async function mesclarContatosAction(
   revalidatePath("/atendimento/contatos");
   return { ok: true };
 }
+
+/**
+ * Apaga todas as conversas e contatos salvos no painel (não mexe no
+ * WhatsApp de verdade, só no histórico aqui dentro). Usado pra começar do
+ * zero depois de corrigir um bug que causava dados errados.
+ */
+export async function limparTodasConversasAction() {
+  await prisma.whatsappContato.deleteMany({});
+  revalidatePath("/atendimento");
+  revalidatePath("/atendimento/contatos");
+}
