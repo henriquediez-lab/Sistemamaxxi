@@ -145,11 +145,25 @@ export async function enviarMensagem(
 ) {
   if (!socket) throw new Error("WhatsApp não está conectado.");
 
-  const jid = `${telefone}@s.whatsapp.net`;
+  let jid = `${telefone}@s.whatsapp.net`;
+  try {
+    const resultados = await socket.onWhatsApp(telefone);
+    const resultado = resultados?.[0];
+    if (resultado?.exists && resultado.jid) {
+      jid = resultado.jid;
+    } else {
+      console.warn(`onWhatsApp não encontrou o número ${telefone}; usando JID construído manualmente.`);
+    }
+  } catch (erroResolucao) {
+    console.warn(`Falha ao resolver JID para ${telefone}:`, erroResolucao);
+  }
+
   const contato = await upsertContato(telefone, null);
 
   try {
-    await socket.sendMessage(jid, { text: texto });
+    console.log(`Enviando mensagem para ${jid}...`);
+    const resultadoEnvio = await socket.sendMessage(jid, { text: texto });
+    console.log(`Resultado do envio para ${jid}:`, JSON.stringify(resultadoEnvio));
     await registrarMensagem({
       contatoId: contato.id,
       direcao: "saida",
@@ -159,6 +173,7 @@ export async function enviarMensagem(
       marcarNaoLida: false,
     });
   } catch (erro) {
+    console.error(`Erro ao enviar mensagem para ${jid}:`, erro);
     await registrarMensagem({
       contatoId: contato.id,
       direcao: "saida",
