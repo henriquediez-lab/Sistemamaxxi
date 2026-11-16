@@ -72,11 +72,15 @@ export async function buscarSaudacaoConfig(): Promise<SaudacaoConfig | null> {
   return resultado.rows[0] ?? null;
 }
 
-export type SetorOpcao = { numero: number; nome: string };
+export type SetorOpcao = {
+  numero: number;
+  nome: string;
+  mensagemConfirmacao: string | null;
+};
 
 export async function listarOpcoesSetor(): Promise<SetorOpcao[]> {
   const resultado = await pool.query<SetorOpcao>(
-    `SELECT numero, nome FROM "WhatsappSetorOpcao" ORDER BY ordem ASC, numero ASC`
+    `SELECT numero, nome, "mensagemConfirmacao" FROM "WhatsappSetorOpcao" ORDER BY ordem ASC, numero ASC`
   );
   return resultado.rows;
 }
@@ -85,7 +89,7 @@ export async function buscarOpcaoSetorPorNumero(
   numero: number
 ): Promise<SetorOpcao | null> {
   const resultado = await pool.query<SetorOpcao>(
-    `SELECT numero, nome FROM "WhatsappSetorOpcao" WHERE numero = $1`,
+    `SELECT numero, nome, "mensagemConfirmacao" FROM "WhatsappSetorOpcao" WHERE numero = $1`,
     [numero]
   );
   return resultado.rows[0] ?? null;

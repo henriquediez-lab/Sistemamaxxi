@@ -229,10 +229,23 @@ export async function salvarSaudacaoAction(formData: FormData) {
 export async function criarOpcaoSetorAction(formData: FormData) {
   const numero = Number(formData.get("numero"));
   const nome = String(formData.get("nome") ?? "").trim();
+  const mensagemConfirmacao = String(formData.get("mensagemConfirmacao") ?? "").trim();
   if (!nome || !Number.isInteger(numero) || numero < 0) return;
 
   await prisma.whatsappSetorOpcao.create({
-    data: { numero, nome, ordem: numero },
+    data: { numero, nome, ordem: numero, mensagemConfirmacao: mensagemConfirmacao || null },
+  });
+  revalidatePath("/atendimento/saudacao");
+}
+
+export async function atualizarOpcaoSetorAction(id: string, formData: FormData) {
+  const nome = String(formData.get("nome") ?? "").trim();
+  const mensagemConfirmacao = String(formData.get("mensagemConfirmacao") ?? "").trim();
+  if (!nome) return;
+
+  await prisma.whatsappSetorOpcao.update({
+    where: { id },
+    data: { nome, mensagemConfirmacao: mensagemConfirmacao || null },
   });
   revalidatePath("/atendimento/saudacao");
 }

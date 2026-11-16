@@ -321,7 +321,7 @@ async function processarMensagem(msg: WAMessage) {
   // Se a saudação automática tinha acabado de perguntar o setor, a
   // próxima mensagem do cliente é a escolha dele (ex: "2").
   const aguardandoEscolha = contato.aguardandoEscolhaSetor;
-  let setorEscolhidoNome: string | null = null;
+  let mensagemConfirmacaoSetor: string | null = null;
   if (aguardandoEscolha && conteudo.tipo === "texto" && conteudo.texto) {
     const numero = Number.parseInt(conteudo.texto.trim(), 10);
     const opcao = Number.isInteger(numero)
@@ -330,7 +330,9 @@ async function processarMensagem(msg: WAMessage) {
     await marcarAguardandoEscolhaSetor(contato.id, false);
     if (opcao) {
       await atualizarSetorContato(contato.id, opcao.nome);
-      setorEscolhidoNome = opcao.nome;
+      mensagemConfirmacaoSetor =
+        opcao.mensagemConfirmacao?.trim() ||
+        `Perfeito! Você foi direcionado(a) para *${opcao.nome}*. Já já alguém da equipe te atende por aqui. 😊`;
     }
   }
 
@@ -346,12 +348,8 @@ async function processarMensagem(msg: WAMessage) {
     respondendoAId: respondendoA?.id,
   });
 
-  if (setorEscolhidoNome) {
-    await enviarMensagem(
-      telefone,
-      `Perfeito! Você foi direcionado(a) para *${setorEscolhidoNome}*. Já já alguém da equipe te atende por aqui. 😊`,
-      { automatica: true }
-    );
+  if (mensagemConfirmacaoSetor) {
+    await enviarMensagem(telefone, mensagemConfirmacaoSetor, { automatica: true });
     return;
   }
 

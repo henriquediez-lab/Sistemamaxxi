@@ -197,12 +197,15 @@ model WhatsappSaudacaoConfig {
 
 // Opção de setor mostrada no menu da saudação automática (ex: "1 - Vendas")
 model WhatsappSetorOpcao {
-  id        String   @id @default(cuid())
-  numero    Int      @unique
-  nome      String
-  ordem     Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  numero              Int      @unique
+  nome                String
+  ordem               Int      @default(0)
+  // Mensagem enviada quando o cliente escolhe essa opção. Se vazio, usa uma
+  // confirmação genérica padrão.
+  mensagemConfirmacao String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 }
 
 // Etiqueta livre pra organizar conversas por assunto (ex: "Urgente", "Aguardando pagamento")
