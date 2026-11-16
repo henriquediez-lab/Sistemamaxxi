@@ -141,6 +141,13 @@ model WhatsappContato {
   // true logo depois de mandar a saudação com o menu de setores, enquanto
   // aguarda o cliente responder com o número da opção escolhida
   aguardandoEscolhaSetor Boolean   @default(false)
+  // sub-rótulo livre, escolhido no segundo menu (dentro do setor já escolhido)
+  subSetor                  String?
+  // true depois de mandar o segundo menu (sub-opções do setor escolhido),
+  // enquanto aguarda o cliente responder com o número
+  aguardandoEscolhaSubSetor Boolean   @default(false)
+  // id da WhatsappSetorOpcao cujo segundo menu está sendo respondido
+  subSetorPaiId             String?
   ultimaMensagemEm       DateTime?
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
@@ -201,11 +208,34 @@ model WhatsappSetorOpcao {
   numero              Int      @unique
   nome                String
   ordem               Int      @default(0)
-  // Mensagem enviada quando o cliente escolhe essa opção. Se vazio, usa uma
-  // confirmação genérica padrão.
+  // Mensagem enviada quando o cliente escolhe essa opção, SE ela não tiver
+  // sub-opções abaixo. Se vazio, usa uma confirmação genérica padrão.
   mensagemConfirmacao String?
+  // Mensagem enviada antes da lista de sub-opções (segundo menu), quando
+  // esse setor tiver pelo menos uma. Se vazio, usa um texto genérico padrão.
+  mensagemSubmenu     String?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
+
+  subOpcoes WhatsappSetorSubOpcao[]
+}
+
+// Sub-opção de um setor, mostrada em um segundo menu depois que o cliente já
+// escolheu o setor principal (ex: dentro de "Vendas": "Orçamento", "Já comprei")
+model WhatsappSetorSubOpcao {
+  id                  String             @id @default(cuid())
+  setorOpcaoId        String
+  setorOpcao          WhatsappSetorOpcao @relation(fields: [setorOpcaoId], references: [id], onDelete: Cascade)
+  numero              Int
+  nome                String
+  ordem               Int                @default(0)
+  // Mensagem enviada quando o cliente escolhe essa sub-opção. Se vazio, usa
+  // uma confirmação genérica padrão.
+  mensagemConfirmacao String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@unique([setorOpcaoId, numero])
 }
 
 // Etiqueta livre pra organizar conversas por assunto (ex: "Urgente", "Aguardando pagamento")

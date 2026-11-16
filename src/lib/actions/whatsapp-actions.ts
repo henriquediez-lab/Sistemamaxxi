@@ -241,17 +241,55 @@ export async function criarOpcaoSetorAction(formData: FormData) {
 export async function atualizarOpcaoSetorAction(id: string, formData: FormData) {
   const nome = String(formData.get("nome") ?? "").trim();
   const mensagemConfirmacao = String(formData.get("mensagemConfirmacao") ?? "").trim();
+  const mensagemSubmenu = String(formData.get("mensagemSubmenu") ?? "").trim();
   if (!nome) return;
 
   await prisma.whatsappSetorOpcao.update({
     where: { id },
-    data: { nome, mensagemConfirmacao: mensagemConfirmacao || null },
+    data: {
+      nome,
+      mensagemConfirmacao: mensagemConfirmacao || null,
+      mensagemSubmenu: mensagemSubmenu || null,
+    },
   });
   revalidatePath("/atendimento/saudacao");
 }
 
 export async function excluirOpcaoSetorAction(id: string) {
   await prisma.whatsappSetorOpcao.delete({ where: { id } });
+  revalidatePath("/atendimento/saudacao");
+}
+
+// --- Sub-opções de setor (segundo menu, dentro de um setor já escolhido) ---
+
+export async function criarSubOpcaoSetorAction(
+  setorOpcaoId: string,
+  formData: FormData
+) {
+  const numero = Number(formData.get("numero"));
+  const nome = String(formData.get("nome") ?? "").trim();
+  if (!nome || !Number.isInteger(numero) || numero < 0) return;
+
+  await prisma.whatsappSetorSubOpcao.create({
+    data: { setorOpcaoId, numero, nome, ordem: numero },
+  });
+  revalidatePath("/atendimento/saudacao");
+}
+
+export async function atualizarSubOpcaoSetorAction(id: string, formData: FormData) {
+  const nome = String(formData.get("nome") ?? "").trim();
+  const mensagemConfirmacao = String(formData.get("mensagemConfirmacao") ?? "").trim();
+  if (!nome) return;
+
+  await prisma.whatsappSetorSubOpcao.update({
+    where: { id },
+    data: { nome, mensagemConfirmacao: mensagemConfirmacao || null },
+  });
+  revalidatePath("/atendimento/saudacao");
+}
+
+export async function excluirSubOpcaoSetorAction(id: string) {
+  await prisma.whatsappSetorSubOpcao.delete({ where: { id } });
   revalidatePath("/atendimento/saudacao");
 }
 

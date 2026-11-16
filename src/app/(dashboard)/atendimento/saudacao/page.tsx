@@ -2,8 +2,11 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import {
   atualizarOpcaoSetorAction,
+  atualizarSubOpcaoSetorAction,
   criarOpcaoSetorAction,
+  criarSubOpcaoSetorAction,
   excluirOpcaoSetorAction,
+  excluirSubOpcaoSetorAction,
   salvarSaudacaoAction,
 } from "@/lib/actions/whatsapp-actions";
 
@@ -13,7 +16,10 @@ export const dynamic = "force-dynamic";
 export default async function SaudacaoPage() {
   const [config, opcoes] = await Promise.all([
     prisma.whatsappSaudacaoConfig.findUnique({ where: { id: "default" } }),
-    prisma.whatsappSetorOpcao.findMany({ orderBy: [{ ordem: "asc" }, { numero: "asc" }] }),
+    prisma.whatsappSetorOpcao.findMany({
+      orderBy: [{ ordem: "asc" }, { numero: "asc" }],
+      include: { subOpcoes: { orderBy: [{ ordem: "asc" }, { numero: "asc" }] } },
+    }),
   ]);
 
   const proximoNumero =
@@ -126,53 +132,168 @@ export default async function SaudacaoPage() {
             menu de setores.
           </div>
         ) : (
-          opcoes.map((opcao) => (
-            <form
-              key={opcao.id}
-              action={atualizarOpcaoSetorAction.bind(null, opcao.id)}
-              className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
-            >
-              <div className="flex items-center gap-2">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-                  {opcao.numero}
-                </span>
-                <input
-                  type="text"
-                  name="nome"
-                  required
-                  defaultValue={opcao.nome}
-                  className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium outline-none focus:border-[#25d366] focus:ring-2 focus:ring-[#25d366]/30 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 dark:text-slate-400">
-                  Mensagem de confirmação (opcional)
-                </label>
-                <textarea
-                  name="mensagemConfirmacao"
-                  rows={2}
-                  defaultValue={opcao.mensagemConfirmacao ?? ""}
-                  placeholder={`Se deixar em branco, usamos: "Perfeito! Você foi direcionado(a) para *${opcao.nome}*. Já já alguém da equipe te atende por aqui. 😊"`}
-                  className="mt-1 w-full resize-none rounded-lg border border-slate-300 px-3 py-1.5 text-xs outline-none focus:border-[#25d366] focus:ring-2 focus:ring-[#25d366]/30 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <button
-                  type="submit"
-                  className="rounded-lg bg-[#00a884] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#06cf9c]"
+          opcoes.map((opcao) => {
+            const temSubOpcoes = opcao.subOpcoes.length > 0;
+            const proximoNumeroSub =
+              opcao.subOpcoes.length > 0
+                ? Math.max(...opcao.subOpcoes.map((s) => s.numero)) + 1
+                : 1;
+
+            return (
+              <div
+                key={opcao.id}
+                className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+              >
+                <form
+                  action={atualizarOpcaoSetorAction.bind(null, opcao.id)}
+                  className="space-y-2"
                 >
-                  Salvar
-                </button>
-                <button
-                  type="submit"
-                  formAction={excluirOpcaoSetorAction.bind(null, opcao.id)}
-                  className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
-                >
-                  Excluir
-                </button>
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                      {opcao.numero}
+                    </span>
+                    <input
+                      type="text"
+                      name="nome"
+                      required
+                      defaultValue={opcao.nome}
+                      className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium outline-none focus:border-[#25d366] focus:ring-2 focus:ring-[#25d366]/30 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 dark:text-slate-400">
+                      Mensagem de confirmação (opcional)
+                    </label>
+                    <textarea
+                      name="mensagemConfirmacao"
+                      rows={2}
+                      defaultValue={opcao.mensagemConfirmacao ?? ""}
+                      placeholder={`Se deixar em branco, usamos: "Perfeito! Você foi direcionado(a) para *${opcao.nome}*. Já já alguém da equipe te atende por aqui. 😊"`}
+                      className="mt-1 w-full resize-none rounded-lg border border-slate-300 px-3 py-1.5 text-xs outline-none focus:border-[#25d366] focus:ring-2 focus:ring-[#25d366]/30 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                    />
+                    {temSubOpcoes && (
+                      <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                        Esse setor tem sub-opções abaixo, então essa mensagem
+                        não é usada — depois que o cliente escolhe uma
+                        sub-opção, ele recebe a mensagem de confirmação dela.
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 dark:text-slate-400">
+                      Mensagem do segundo menu (opcional)
+                    </label>
+                    <textarea
+                      name="mensagemSubmenu"
+                      rows={2}
+                      defaultValue={opcao.mensagemSubmenu ?? ""}
+                      placeholder={`Só é enviada se tiver sub-opções cadastradas abaixo. Se deixar em branco, usamos: "Perfeito! Para te atender melhor em *${opcao.nome}*, escolha uma opção:"`}
+                      className="mt-1 w-full resize-none rounded-lg border border-slate-300 px-3 py-1.5 text-xs outline-none focus:border-[#25d366] focus:ring-2 focus:ring-[#25d366]/30 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="submit"
+                      className="rounded-lg bg-[#00a884] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#06cf9c]"
+                    >
+                      Salvar
+                    </button>
+                    <button
+                      type="submit"
+                      formAction={excluirOpcaoSetorAction.bind(null, opcao.id)}
+                      className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+                    >
+                      Excluir
+                    </button>
+                  </div>
+                </form>
+
+                <div className="space-y-2 border-l-2 border-slate-100 pl-3 dark:border-slate-800">
+                  <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    Segunda triagem dentro de &ldquo;{opcao.nome}&rdquo;
+                  </p>
+                  {opcao.subOpcoes.length === 0 ? (
+                    <p className="text-xs text-slate-400">
+                      Sem sub-opções — o cliente recai direto na mensagem de
+                      confirmação acima.
+                    </p>
+                  ) : (
+                    opcao.subOpcoes.map((sub) => (
+                      <form
+                        key={sub.id}
+                        action={atualizarSubOpcaoSetorAction.bind(null, sub.id)}
+                        className="space-y-1.5 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/50"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-xs font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                            {sub.numero}
+                          </span>
+                          <input
+                            type="text"
+                            name="nome"
+                            required
+                            defaultValue={sub.nome}
+                            className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm outline-none focus:border-[#25d366] focus:ring-2 focus:ring-[#25d366]/30 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                          />
+                        </div>
+                        <textarea
+                          name="mensagemConfirmacao"
+                          rows={2}
+                          defaultValue={sub.mensagemConfirmacao ?? ""}
+                          placeholder={`Se deixar em branco, usamos: "Entendido! Já já alguém da equipe te atende sobre *${sub.nome}*. 😊"`}
+                          className="w-full resize-none rounded-lg border border-slate-300 px-2 py-1 text-xs outline-none focus:border-[#25d366] focus:ring-2 focus:ring-[#25d366]/30 dark:border-slate-600 dark:bg-slate-900 dark:text-white"
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="submit"
+                            className="rounded-lg bg-[#00a884] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[#06cf9c]"
+                          >
+                            Salvar
+                          </button>
+                          <button
+                            type="submit"
+                            formAction={excluirSubOpcaoSetorAction.bind(null, sub.id)}
+                            className="rounded-lg border border-red-200 px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+                          >
+                            Excluir
+                          </button>
+                        </div>
+                      </form>
+                    ))
+                  )}
+
+                  <form
+                    action={criarSubOpcaoSetorAction.bind(null, opcao.id)}
+                    className="flex items-end gap-2"
+                  >
+                    <div className="w-16">
+                      <input
+                        type="number"
+                        name="numero"
+                        required
+                        min={0}
+                        defaultValue={proximoNumeroSub}
+                        className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-[#25d366] focus:ring-2 focus:ring-[#25d366]/30 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                      />
+                    </div>
+                    <input
+                      type="text"
+                      name="nome"
+                      required
+                      placeholder="ex: Orçamento"
+                      className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-[#25d366] focus:ring-2 focus:ring-[#25d366]/30 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                    />
+                    <button
+                      type="submit"
+                      className="rounded-lg border border-[#00a884] px-3 py-1.5 text-xs font-semibold text-[#00a884] hover:bg-[#00a884]/10"
+                    >
+                      Adicionar sub-opção
+                    </button>
+                  </form>
+                </div>
               </div>
-            </form>
-          ))
+            );
+          })
         )}
       </div>
     </div>

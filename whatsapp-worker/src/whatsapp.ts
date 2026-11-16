@@ -9,12 +9,16 @@ import makeWASocket, {
 import pino from "pino";
 import {
   atualizarSetorContato,
+  atualizarSubSetorContato,
   buscarMensagemParaCitar,
   buscarMensagemPorWaId,
   buscarOpcaoSetorPorNumero,
   buscarSaudacaoConfig,
+  buscarSubOpcaoPorNumero,
   listarOpcoesSetor,
+  listarSubOpcoesSetor,
   marcarAguardandoEscolhaSetor,
+  marcarAguardandoEscolhaSubSetor,
   registrarMensagem,
   upsertContato,
   type Contato,
@@ -318,11 +322,32 @@ async function processarMensagem(msg: WAMessage) {
     return;
   }
 
-  // Se a saudação automática tinha acabado de perguntar o setor, a
-  // próxima mensagem do cliente é a escolha dele (ex: "2").
+  // Se a saudação automática (ou o menu de um setor) tinha acabado de
+  // perguntar alguma coisa, a próxima mensagem do cliente é a escolha dele
+  // (ex: "2"). Primeiro checa se ele está no segundo menu (sub-opção de um
+  // setor já escolhido); se não estiver, checa o menu principal de setores.
+  const aguardandoSubEscolha = contato.aguardandoEscolhaSubSetor;
   const aguardandoEscolha = contato.aguardandoEscolhaSetor;
-  let mensagemConfirmacaoSetor: string | null = null;
-  if (aguardandoEscolha && conteudo.tipo === "texto" && conteudo.texto) {
+  let mensagemResposta: string | null = null;
+
+  if (
+    aguardandoSubEscolha &&
+    contato.subSetorPaiId &&
+    conteudo.tipo === "texto" &&
+    conteudo.texto
+  ) {
+    const numero = Number.parseInt(conteudo.texto.trim(), 10);
+    const subOpcao = Number.isInteger(numero)
+      ? await buscarSubOpcaoPorNumero(contato.subSetorPaiId, numero)
+      : null;
+    await marcarAguardandoEscolhaSubSetor(contato.id, false, null);
+    if (subOpcao) {
+      await atualizarSubSetorContato(contato.id, subOpcao.nome);
+      mensagemResposta =
+        subOpcao.mensagemConfirmacao?.trim() ||
+        `Entendido! Já já alguém da equipe te atende sobre *${subOpcao.nome}*. 😊`;
+    }
+  } else if (aguardandoEscolha && conteudo.tipo === "texto" && conteudo.texto) {
     const numero = Number.parseInt(conteudo.texto.trim(), 10);
     const opcao = Number.isInteger(numero)
       ? await buscarOpcaoSetorPorNumero(numero)
@@ -330,9 +355,19 @@ async function processarMensagem(msg: WAMessage) {
     await marcarAguardandoEscolhaSetor(contato.id, false);
     if (opcao) {
       await atualizarSetorContato(contato.id, opcao.nome);
-      mensagemConfirmacaoSetor =
-        opcao.mensagemConfirmacao?.trim() ||
-        `Perfeito! Você foi direcionado(a) para *${opcao.nome}*. Já já alguém da equipe te atende por aqui. 😊`;
+      const subOpcoes = await listarSubOpcoesSetor(opcao.id);
+      if (subOpcoes.length > 0) {
+        mensagemResposta = montarMensagemSaudacao(
+          opcao.mensagemSubmenu?.trim() ||
+            `Perfeito! Para te atender melhor em *${opcao.nome}*, escolha uma opção:`,
+          subOpcoes
+        );
+        await marcarAguardandoEscolhaSubSetor(contato.id, true, opcao.id);
+      } else {
+        mensagemResposta =
+          opcao.mensagemConfirmacao?.trim() ||
+          `Perfeito! Você foi direcionado(a) para *${opcao.nome}*. Já já alguém da equipe te atende por aqui. 😊`;
+      }
     }
   }
 
@@ -348,14 +383,15 @@ async function processarMensagem(msg: WAMessage) {
     respondendoAId: respondendoA?.id,
   });
 
-  if (mensagemConfirmacaoSetor) {
-    await enviarMensagem(telefone, mensagemConfirmacaoSetor, { automatica: true });
+  if (mensagemResposta) {
+    await enviarMensagem(telefone, mensagemResposta, { automatica: true });
     return;
   }
 
   // Cliente sumiu por mais de 24h (ou é a primeira mensagem dele) — manda a
   // saudação com o menu de setores antes de qualquer outra automação.
-  if (!aguardandoEscolha) {
+  // (Não dispara se ele estava no meio de uma das duas etapas de triagem.)
+  if (!aguardandoEscolha && !aguardandoSubEscolha) {
     const semInteracaoRecente =
       !contato.ultimaMensagemEm ||
       Date.now() - contato.ultimaMensagemEm.getTime() >= INTERVALO_SAUDACAO_MS;
