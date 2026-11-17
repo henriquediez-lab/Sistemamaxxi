@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/current-user";
 import { prisma } from "@/lib/prisma";
@@ -19,9 +20,17 @@ export default async function EquipePage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-10">
-      <h1 className="text-xl font-semibold text-slate-900 dark:text-white">
-        Equipe
-      </h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold text-slate-900 dark:text-white">
+          Equipe
+        </h1>
+        <Link
+          href="/equipe/metricas"
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
+        >
+          Ver métricas de atendimento →
+        </Link>
+      </div>
       <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
         Cada pessoa com login próprio aparece separada no histórico de
         atendimento (quem respondeu o quê). Administradores podem gerenciar a
