@@ -55,6 +55,7 @@ export function criarServidor() {
       midiaTipo,
       midiaMimetype,
       midiaNomeArquivo,
+      midiaPtt,
       respondendoAId,
     } = req.body ?? {};
 
@@ -85,6 +86,7 @@ export function criarServidor() {
               mimetype: typeof midiaMimetype === "string" ? midiaMimetype : undefined,
               nomeArquivo:
                 typeof midiaNomeArquivo === "string" ? midiaNomeArquivo : undefined,
+              ptt: midiaPtt === true,
             }
           : undefined,
       });

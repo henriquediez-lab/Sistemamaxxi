@@ -1,5 +1,6 @@
 import { put } from "@vercel/blob";
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 
 const EXTENSAO_POR_SUBTIPO: Record<string, string> = {
   jpeg: "jpg",
@@ -37,4 +38,55 @@ export async function subirMidia(
   });
 
   return resultado.url;
+}
+
+/** Baixa um arquivo público (ex: do Vercel Blob) e devolve o conteúdo em memória. */
+export async function baixarArquivoUrl(url: string): Promise<Buffer> {
+  const resposta = await fetch(url);
+  if (!resposta.ok) {
+    throw new Error(`Falha ao baixar arquivo (HTTP ${resposta.status}).`);
+  }
+  return Buffer.from(await resposta.arrayBuffer());
+}
+
+/**
+ * Converte qualquer áudio (ex: webm gravado no navegador) para ogg/opus —
+ * o formato que o WhatsApp exige para mostrar como mensagem de voz (nota de
+ * áudio tocável com "ptt", em vez de arquivo de áudio comum).
+ */
+export async function transcodarParaOggOpus(buffer: Buffer): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const ffmpeg = spawn("ffmpeg", [
+      "-i", "pipe:0",
+      "-f", "ogg",
+      "-c:a", "libopus",
+      "-ar", "48000",
+      "-ac", "1",
+      "pipe:1",
+    ]);
+
+    const pedacos: Buffer[] = [];
+    let erroSaida = "";
+
+    ffmpeg.stdout.on("data", (pedaco) => pedacos.push(pedaco));
+    ffmpeg.stderr.on("data", (pedaco) => {
+      erroSaida += pedaco.toString();
+    });
+    ffmpeg.on("error", (erro) => {
+      reject(new Error(`Não foi possível executar o ffmpeg: ${erro.message}`));
+    });
+    ffmpeg.on("close", (codigo) => {
+      if (codigo === 0) {
+        resolve(Buffer.concat(pedacos));
+      } else {
+        reject(new Error(`ffmpeg falhou (código ${codigo}): ${erroSaida.slice(-500)}`));
+      }
+    });
+
+    ffmpeg.stdin.on("error", () => {
+      // EPIPE etc. — já tratado pelo listener "close"/"error" do processo.
+    });
+    ffmpeg.stdin.write(buffer);
+    ffmpeg.stdin.end();
+  });
 }

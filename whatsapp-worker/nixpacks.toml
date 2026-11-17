@@ -1,0 +1,5 @@
+# Instala o ffmpeg no ambiente do Railway — é usado pra converter os áudios
+# gravados no painel (webm) pro formato ogg/opus que o WhatsApp exige pra
+# mostrar como nota de voz tocável.
+[phases.setup]
+nixPkgs = ["ffmpeg"]

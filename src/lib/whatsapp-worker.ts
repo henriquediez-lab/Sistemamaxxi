@@ -62,6 +62,7 @@ export async function enviarMensagemWhatsapp(
       tipo: TipoMidiaWhatsapp;
       mimetype?: string;
       nomeArquivo?: string;
+      ptt?: boolean;
     };
   }
 ): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -86,6 +87,7 @@ export async function enviarMensagemWhatsapp(
         midiaTipo: opts?.midia?.tipo,
         midiaMimetype: opts?.midia?.mimetype,
         midiaNomeArquivo: opts?.midia?.nomeArquivo,
+        midiaPtt: opts?.midia?.ptt,
       }),
       signal: AbortSignal.timeout(30000),
     });

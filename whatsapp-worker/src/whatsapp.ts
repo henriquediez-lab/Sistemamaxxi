@@ -25,7 +25,7 @@ import {
   type TipoMensagem,
 } from "./db.js";
 import { encontrarRegraCorrespondente } from "./automacao.js";
-import { subirMidia } from "./media.js";
+import { baixarArquivoUrl, subirMidia, transcodarParaOggOpus } from "./media.js";
 
 const AUTH_DIR = process.env.AUTH_DIR ?? "./auth_info_baileys";
 const logger = pino({ level: process.env.LOG_LEVEL ?? "warn" });
@@ -423,13 +423,14 @@ async function processarMensagem(msg: WAMessage) {
   }
 }
 
-function construirConteudoEnvio(
+async function construirConteudoEnvio(
   texto: string | undefined,
   midia?: {
     url: string;
     tipo: TipoMensagem;
     mimetype?: string | null;
     nomeArquivo?: string | null;
+    ptt?: boolean;
   }
 ) {
   if (!midia || midia.tipo === "texto") {
@@ -449,11 +450,24 @@ function construirConteudoEnvio(
         ...(texto ? { caption: texto } : {}),
         mimetype: midia.mimetype ?? undefined,
       };
-    case "audio":
+    case "audio": {
+      if (midia.ptt) {
+        // Nota de voz gravada no painel — o WhatsApp só mostra o balão
+        // tocável de áudio (com a onda sonora) se o conteúdo for mesmo
+        // ogg/opus, então converte antes de enviar.
+        const original = await baixarArquivoUrl(midia.url);
+        const convertido = await transcodarParaOggOpus(original);
+        return {
+          audio: convertido,
+          mimetype: "audio/ogg; codecs=opus",
+          ptt: true,
+        };
+      }
       return {
         audio: { url: midia.url },
         mimetype: midia.mimetype ?? "audio/ogg; codecs=opus",
       };
+    }
     case "documento":
       return {
         document: { url: midia.url },
@@ -475,6 +489,7 @@ export async function enviarMensagem(
       tipo: TipoMensagem;
       mimetype?: string | null;
       nomeArquivo?: string | null;
+      ptt?: boolean;
     };
     respondendoAId?: string;
   }
@@ -518,7 +533,7 @@ export async function enviarMensagem(
     }
   }
 
-  const conteudoEnvio = construirConteudoEnvio(texto, opts?.midia);
+  const conteudoEnvio = await construirConteudoEnvio(texto, opts?.midia);
   const tipoRegistrado: TipoMensagem = opts?.midia?.tipo ?? "texto";
 
   try {

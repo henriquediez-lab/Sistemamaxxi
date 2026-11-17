@@ -26,6 +26,10 @@ export async function enviarMensagemWhatsappAction(
   const respondendoAId = String(formData.get("respondendoAId") ?? "") || undefined;
   const arquivo = formData.get("arquivo");
   const temArquivo = arquivo instanceof File && arquivo.size > 0;
+  // true quando o arquivo veio do botão de gravar áudio (🎤) no painel, não
+  // de um anexo escolhido manualmente — faz o worker enviar como nota de
+  // voz (ptt) em vez de arquivo de áudio comum.
+  const ptt = formData.get("ptt") === "1";
 
   if (!texto && !temArquivo) {
     return { ok: false, error: "Digite uma mensagem ou anexe um arquivo." };
@@ -43,6 +47,7 @@ export async function enviarMensagemWhatsappAction(
     tipo: TipoMidiaWhatsapp;
     mimetype?: string;
     nomeArquivo?: string;
+    ptt?: boolean;
   } | undefined;
 
   if (temArquivo) {
@@ -66,6 +71,7 @@ export async function enviarMensagemWhatsappAction(
         tipo,
         mimetype: arquivoFile.type || undefined,
         nomeArquivo: arquivoFile.name,
+        ptt: ptt && tipo === "audio" ? true : undefined,
       };
     } catch (error) {
       return {
