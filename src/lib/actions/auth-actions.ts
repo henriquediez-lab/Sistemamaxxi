@@ -58,6 +58,10 @@ export async function loginAction(
     return { error: "E-mail ou senha inválidos." };
   }
 
+  if (!user.ativo) {
+    return { error: "Essa conta está desativada. Fale com o administrador." };
+  }
+
   await startSession(user);
   redirect("/");
 }
@@ -97,7 +101,7 @@ export async function createFirstAdminAction(
 
   const passwordHash = await bcrypt.hash(password, 12);
   const user = await prisma.user.create({
-    data: { name, email, passwordHash },
+    data: { name, email, passwordHash, role: "admin" },
   });
 
   await startSession(user);

@@ -20,6 +20,11 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
+  const navItems =
+    user.role === "admin"
+      ? [...NAV_ITEMS, { href: "/equipe", label: "Equipe" }]
+      : NAV_ITEMS;
+
   return (
     <div className="flex min-h-screen flex-1">
       <aside className="flex w-60 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
@@ -33,7 +38,7 @@ export default async function DashboardLayout({
         </div>
 
         <nav className="flex-1 space-y-1 px-3 py-4">
-          {NAV_ITEMS.map((item) => (
+          {navItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}

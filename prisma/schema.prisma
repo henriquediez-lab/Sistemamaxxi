@@ -16,6 +16,10 @@ model User {
   email        String   @unique
   passwordHash String
   name         String
+  // "admin" (gerencia a equipe) ou "atendente" (só usa o painel)
+  role         String   @default("atendente")
+  // false = login bloqueado, mas o histórico de mensagens (enviadoPor) continua intacto
+  ativo        Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
