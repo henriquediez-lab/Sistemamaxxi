@@ -17,15 +17,17 @@ export type Contato = {
   subSetor: string | null;
   aguardandoEscolhaSubSetor: boolean;
   subSetorPaiId: string | null;
+  ehGrupo: boolean;
 };
 
-const CAMPOS_CONTATO = `id, telefone, nome, "fotoUrl", setor, "naoLida", "ultimaMensagemEm", "aguardandoEscolhaSetor", "subSetor", "aguardandoEscolhaSubSetor", "subSetorPaiId"`;
+const CAMPOS_CONTATO = `id, telefone, nome, "fotoUrl", setor, "naoLida", "ultimaMensagemEm", "aguardandoEscolhaSetor", "subSetor", "aguardandoEscolhaSubSetor", "subSetorPaiId", "ehGrupo"`;
 
-/** Cria o contato se não existir, ou atualiza nome/foto quando informados. */
+/** Cria o contato (ou o grupo) se não existir, ou atualiza nome/foto quando informados. */
 export async function upsertContato(
   telefone: string,
   nome: string | null,
-  fotoUrl?: string | null
+  fotoUrl?: string | null,
+  ehGrupo?: boolean
 ): Promise<Contato> {
   const existente = await pool.query<Contato>(
     `SELECT ${CAMPOS_CONTATO} FROM "WhatsappContato" WHERE telefone = $1`,
@@ -48,10 +50,10 @@ export async function upsertContato(
 
   const id = randomUUID();
   const inserido = await pool.query<Contato>(
-    `INSERT INTO "WhatsappContato" (id, telefone, nome, "fotoUrl", "createdAt", "updatedAt")
-     VALUES ($1, $2, $3, $4, now(), now())
+    `INSERT INTO "WhatsappContato" (id, telefone, nome, "fotoUrl", "ehGrupo", "createdAt", "updatedAt")
+     VALUES ($1, $2, $3, $4, $5, now(), now())
      RETURNING ${CAMPOS_CONTATO}`,
-    [id, telefone, nome, fotoUrl ?? null]
+    [id, telefone, nome, fotoUrl ?? null, ehGrupo ?? false]
   );
   return inserido.rows[0];
 }
@@ -167,13 +169,16 @@ export async function registrarMensagem(params: {
   enviadoPor?: string | null;
   erro?: string | null;
   marcarNaoLida?: boolean;
+  remetenteJid?: string | null;
+  remetenteNome?: string | null;
 }): Promise<string> {
   const id = randomUUID();
   await pool.query(
     `INSERT INTO "WhatsappMensagem"
        (id, "contatoId", direcao, "waMessageId", tipo, texto, "midiaUrl", "midiaMimetype",
-        "midiaNomeArquivo", "respondendoAId", automatica, "enviadoPor", erro, "createdAt")
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now())`,
+        "midiaNomeArquivo", "respondendoAId", automatica, "enviadoPor", erro,
+        "remetenteJid", "remetenteNome", "createdAt")
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now())`,
     [
       id,
       params.contatoId,
@@ -188,6 +193,8 @@ export async function registrarMensagem(params: {
       params.automatica ?? false,
       params.enviadoPor ?? null,
       params.erro ?? null,
+      params.remetenteJid ?? null,
+      params.remetenteNome ?? null,
     ]
   );
 

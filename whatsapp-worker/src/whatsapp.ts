@@ -81,7 +81,7 @@ function construirJidEnvio(identificador: string): string {
     : `${identificador}@s.whatsapp.net`;
 }
 
-/** Busca a foto de perfil do contato, se ainda não tivermos uma salva. */
+/** Busca a foto de perfil do contato (ou do grupo), se ainda não tivermos uma salva. */
 async function atualizarFotoSeNecessario(contato: Contato, jid: string) {
   if (contato.fotoUrl || !socket) return;
   try {
@@ -91,6 +91,19 @@ async function atualizarFotoSeNecessario(contato: Contato, jid: string) {
     }
   } catch {
     // Contato sem foto, ou sem permissão pra ver — não é um erro de verdade.
+  }
+}
+
+/** Busca o nome do grupo, se ainda não tivermos um salvo (a mensagem não traz o nome do grupo, só do remetente). */
+async function atualizarNomeGrupoSeNecessario(contato: Contato, jid: string) {
+  if (contato.nome || !socket) return;
+  try {
+    const metadata = await socket.groupMetadata(jid);
+    if (metadata?.subject) {
+      await upsertContato(contato.telefone, metadata.subject);
+    }
+  } catch (erro) {
+    console.warn(`Falha ao buscar nome do grupo ${jid}:`, erro);
   }
 }
 
@@ -282,20 +295,32 @@ async function baixarMidia(
 async function processarMensagem(msg: WAMessage) {
   const remoteJid = msg.key.remoteJid;
   if (!remoteJid) return;
-  if (remoteJid.endsWith("@g.us")) return; // ignora grupos
   if (remoteJid === "status@broadcast") return;
+
+  const ehGrupo = remoteJid.endsWith("@g.us");
 
   const conteudo = extrairConteudo(msg);
   if (!conteudo) return; // figurinha/localização/etc, ainda não suportado
   if (!conteudo.texto && conteudo.tipo === "texto") return; // mensagem de texto vazia
 
-  const telefone = await resolverJidCanonico(remoteJid);
+  // Em grupo não existe LID/PN pra resolver — o JID do grupo em si já é o
+  // identificador estável.
+  const telefone = ehGrupo ? normalizarJid(remoteJid) : await resolverJidCanonico(remoteJid);
   // O "pushName" de uma mensagem enviada por nós mesmos (fromMe) é o nome
   // do nosso próprio perfil (ex: "Maxxi Tacos"), não o do cliente — por
-  // isso só usamos o pushName em mensagens recebidas de verdade.
-  const nomeContato = msg.key.fromMe ? null : msg.pushName ?? null;
-  const contato = await upsertContato(telefone, nomeContato);
+  // isso só usamos o pushName em mensagens recebidas de verdade. Em grupo,
+  // o nome do CONTATO (a conversa) é o nome do grupo, não de quem mandou —
+  // isso é buscado à parte, logo abaixo.
+  const nomeContato = !ehGrupo && !msg.key.fromMe ? msg.pushName ?? null : null;
+  const contato = await upsertContato(telefone, nomeContato, undefined, ehGrupo);
   await atualizarFotoSeNecessario(contato, telefone);
+  if (ehGrupo) await atualizarNomeGrupoSeNecessario(contato, telefone);
+
+  // Dentro de um grupo, quem mandou a mensagem (a conversa toda é o grupo).
+  const remetenteJid =
+    ehGrupo && !msg.key.fromMe ? msg.key.participant ?? null : null;
+  const remetenteNome =
+    ehGrupo && !msg.key.fromMe ? msg.pushName ?? null : null;
 
   const respondendoA = conteudo.stanzaIdCitada
     ? await buscarMensagemPorWaId(contato.id, conteudo.stanzaIdCitada)
@@ -318,6 +343,26 @@ async function processarMensagem(msg: WAMessage) {
       respondendoAId: respondendoA?.id,
       enviadoPor: "celular",
       marcarNaoLida: false,
+    });
+    return;
+  }
+
+  // Saudação automática, triagem por setor e respostas por palavra-chave
+  // são automações pensadas pra atendimento 1-a-1 — não fazem sentido (e
+  // podem ser bem inconvenientes) dentro de um grupo.
+  if (ehGrupo) {
+    await registrarMensagem({
+      contatoId: contato.id,
+      direcao: "entrada",
+      waMessageId: msg.key.id,
+      tipo: conteudo.tipo,
+      texto: conteudo.texto,
+      midiaUrl,
+      midiaMimetype: conteudo.mimetype,
+      midiaNomeArquivo: conteudo.nomeArquivo,
+      respondendoAId: respondendoA?.id,
+      remetenteJid,
+      remetenteNome,
     });
     return;
   }

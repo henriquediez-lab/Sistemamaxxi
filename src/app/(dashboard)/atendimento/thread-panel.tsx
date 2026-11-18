@@ -16,6 +16,7 @@ export type MensagemThread = {
   erro: string | null;
   createdAtFormatado: string;
   respondendoA: MensagemCitavel | null;
+  remetenteNome: string | null;
 };
 
 const RESUMO_TIPO: Record<string, string> = {
@@ -211,6 +212,11 @@ export function ThreadPanel({
                     : "rounded-tl-none bg-white text-slate-800 dark:bg-[#202c33] dark:text-slate-100"
                 }`}
               >
+                {!minha && mensagem.remetenteNome && (
+                  <p className="mb-0.5 text-xs font-semibold text-[#008069] dark:text-[#06cf9c]">
+                    {mensagem.remetenteNome}
+                  </p>
+                )}
                 {mensagem.respondendoA && (
                   <QuotePreview mensagem={mensagem.respondendoA} />
                 )}

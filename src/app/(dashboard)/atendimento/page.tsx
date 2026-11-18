@@ -151,6 +151,7 @@ export default async function AtendimentoPage({
       enviadoPor: mensagem.enviadoPor,
       erro: mensagem.erro,
       createdAtFormatado: formatDateTimeBR(mensagem.createdAt),
+      remetenteNome: mensagem.remetenteNome,
       respondendoA: mensagem.respondendoA
         ? {
             id: mensagem.respondendoA.id,
@@ -333,8 +334,11 @@ export default async function AtendimentoPage({
                         />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-2">
-                            <p className="truncate text-[15px] font-medium text-slate-900 dark:text-white">
-                              {contato.nome ?? contato.telefone}
+                            <p className="flex min-w-0 items-center gap-1 truncate text-[15px] font-medium text-slate-900 dark:text-white">
+                              {contato.ehGrupo && <span title="Grupo">👥</span>}
+                              <span className="truncate">
+                                {contato.nome ?? contato.telefone}
+                              </span>
                             </p>
                             {contato.ultimaMensagemEm && (
                               <span
@@ -395,11 +399,12 @@ export default async function AtendimentoPage({
                     nome={selectedContato.nome ?? selectedContato.telefone}
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                    <p className="flex items-center gap-1 text-sm font-semibold text-slate-900 dark:text-white">
+                      {selectedContato.ehGrupo && <span title="Grupo">👥</span>}
                       {selectedContato.nome ?? selectedContato.telefone}
                     </p>
                     <p className="text-xs text-slate-400">
-                      {selectedContato.telefone}
+                      {selectedContato.ehGrupo ? "Grupo" : selectedContato.telefone}
                       {selectedContato.setor && <> · {selectedContato.setor}</>}
                     </p>
                     <ContactTags

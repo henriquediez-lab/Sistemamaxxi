@@ -152,6 +152,9 @@ model WhatsappContato {
   aguardandoEscolhaSubSetor Boolean   @default(false)
   // id da WhatsappSetorOpcao cujo segundo menu está sendo respondido
   subSetorPaiId             String?
+  // true pra grupos do WhatsApp (não dispara saudação automática nem
+  // respostas por palavra-chave — só aparece pra acompanhar as mensagens)
+  ehGrupo                Boolean   @default(false)
   ultimaMensagemEm       DateTime?
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
@@ -177,6 +180,10 @@ model WhatsappMensagem {
   respondendoAId   String?
   respondendoA     WhatsappMensagem?  @relation("RespostaCitada", fields: [respondendoAId], references: [id], onDelete: SetNull)
   respostas        WhatsappMensagem[] @relation("RespostaCitada")
+  // Em mensagens de grupo recebidas, quem dentro do grupo mandou (o grupo
+  // inteiro é o "contato"/conversa — isso aqui identifica a pessoa)
+  remetenteJid     String?
+  remetenteNome    String?
   automatica       Boolean            @default(false) // true quando foi uma resposta automática (regra de palavra-chave)
   enviadoPor       String? // e-mail de quem respondeu manualmente, quando aplicável
   erro             String? // mensagem de erro, se falhou ao enviar
